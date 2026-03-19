@@ -22,8 +22,8 @@ Build a Python pipeline + HTML dashboard that:
 
 **In scope:**
 - Cochrane reviews only (structured RDA data)
-- Pairwise70 dataset (465 reviews with post-2000 studies, cross-domain medicine)
-- Re-extraction via existing RCT Extractor v10.3
+- Pairwise70 dataset (501 RDA files → 465 reviews after post-2000 filter → ~1,290 studies with OA PDFs from existing mega gold standard pipeline)
+- Re-extraction via existing RCT Extractor v10.3 (deterministic text + table + computation only, no LLM)
 - DL + REML pooled meta-analysis in Python
 - Two-level reproducibility assessment (study-level + review-level)
 - Three-tier review-level classification
@@ -31,12 +31,15 @@ Build a Python pipeline + HTML dashboard that:
 - Single-file HTML dashboard
 - BMJ manuscript
 
+**Data source clarification (R2-P0-NEW-1):** The ~1,290 study-PDF pairs come from the existing mega gold standard pipeline, which already ran DOI lookup (via Cochrane review reference lists) and PDF download (via Europe PMC) for the Pairwise70 reviews. These PDFs are a subset of the Pairwise70 studies — specifically, the ones with OA PMCIDs. MetaReproducer reuses this existing PDF corpus; it does NOT perform new PDF discovery. The study-level match rate (~30-40% strict) is measured on this specific corpus.
+
 **Out of scope (future work):**
 - Non-Cochrane systematic reviews
 - NLP parsing of review PDFs to identify included studies
 - Real-time CT.gov monitoring / living observatory
 - Non-English reviews
 - Pre-2000 studies (Pairwise70 filter; see Section 14, P0-4)
+- New PDF discovery beyond existing mega gold standard corpus
 
 ## 4. Architecture
 
@@ -278,9 +281,9 @@ class ReproducibilityReport:
 ```
 
 **Review-level classification rules (revised thresholds — P0-2 fix):**
-- **Reproduced**: pooled effect within 10% AND same direction AND same significance AND k_coverage >= 0.50
-- **Minor discrepancy**: same direction AND same significance, but effect >10% OR k_coverage 0.30-0.49
-- **Major discrepancy**: different significance conclusion OR different direction (with k_coverage >= 0.30)
+- **Reproduced**: pooled effect within 10% AND same direction AND same significance (alpha=0.05) AND k_coverage >= 0.50
+- **Minor discrepancy**: same direction AND same significance (alpha=0.05), but effect >10% OR k_coverage 0.30-0.49
+- **Major discrepancy**: different significance (alpha=0.05) OR different direction (with k_coverage >= 0.30)
 - **Insufficient**: k_coverage < 0.30 (too few studies extracted for meaningful pooled comparison)
 
 Thresholds relaxed from v1 (was 5%/75%) based on actual data: only ~80 reviews achieve k_coverage >= 50%, and strict 5% study-level match is ~30-40%. The 10% pooled threshold accounts for cascading extraction uncertainty across multiple studies.
@@ -368,6 +371,8 @@ def reproduce_review(rda_path: str, pdf_dir: str, doi_map: dict) -> list[Reprodu
 ```
 
 **Key change from v1:** Returns a list of reports (one per outcome per review), not a single report. The primary outcome selection (P1-3) is handled at the analysis/manuscript level, not in the pipeline — we compute all outcomes and let the analysis scripts select which to report.
+
+**Primary outcome selection rule (R2-S-NEW-4):** For the BMJ manuscript, the primary outcome per review is the outcome with the **largest k** (most studies). Ties broken by: (1) binary over continuous over GIV-only, (2) alphabetical outcome label. This is pre-specified and deterministic. Sensitivity analysis: report results using all outcomes (inflated N, but shows robustness).
 
 **Subgroup handling (P1-8):** The RDA parser groups studies by outcome label and subgroup. Overall analyses (no subgroup label or subgroup="Total") are processed by default. Subgroup-specific analyses are stored but not included in the primary audit — available for sensitivity analysis.
 
@@ -460,8 +465,7 @@ Pairwise70 RDA files (465)
 |------|-----------|
 | Strict match | Extracted effect within 5% of Cochrane GIV.Mean (on appropriate scale) |
 | Moderate match | Within 10% |
-| Weak match | Within 20% (reported for context, not primary) |
-| No match | >20% or extraction failed |
+| No match | >10% or extraction failed |
 
 ### Review-level (pooled estimate comparison)
 
@@ -614,8 +618,17 @@ The large "insufficient" group is itself a finding: it quantifies the OA coverag
 - **P1-7**: REML convergence → max iterations, convergence flag, DL fallback
 - **P1-8**: Subgroups → parsed and stored, excluded from primary analysis, available for sensitivity
 
-### Suggestions adopted
+### Suggestions adopted (R1)
 - **S1**: Lazy-rendered drill-down panels (not precomputed)
 - **S2**: Significance shift highlighted as distinct finding
 - **S3**: Cochrane-recomputed baseline as integration test (validates engine before comparing extractions)
 - **S4**: Graceful failure tolerance in success criteria
+
+### R2 fixes
+- **R2-P0-NEW-1**: Clarified that ~1,290 PDFs are from existing mega gold standard pipeline (Pairwise70 subset with OA PMCIDs), not a separate corpus. MetaReproducer reuses this existing mapping.
+- **R2-P1-NEW-1**: Review-level thin N acknowledged. Therapeutic area breakdowns will collapse groups with <10 reviews. Power analysis deferred to implementation (depends on actual distribution).
+- **R2-P1-NEW-2**: Effect type inference percentages will be validated as part of `test_effect_inference.py`. Ambiguous continuous cases (26%) default to MD with ambiguity flag — taxonomy captures this.
+- **R2-S-NEW-2**: Removed "Weak match" (20%) tier from study-level classification. Only strict (5%) and moderate (10%).
+- **R2-S-NEW-3**: Pre-registration on OSF noted as desirable; user decision on timing.
+- **R2-S-NEW-4**: Primary outcome = outcome with largest k, deterministic tiebreaker.
+- **R2-S-NEW-5**: Alpha=0.05 made explicit in review-level classification rules.
