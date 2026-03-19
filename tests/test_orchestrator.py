@@ -2,6 +2,7 @@
 
 import math
 import pytest
+from pathlib import Path
 
 
 def test_reproduce_outcome_insufficient():
@@ -86,3 +87,30 @@ def test_se_from_ci_diff():
     se = se_from_ci(-2.5, -5.1, 0.1, is_ratio=False)
     assert se is not None
     assert abs(se - expected) < 1e-6
+
+
+def test_full_pipeline_real_rda():
+    """Integration: load real RDA, infer types, compute reference pooled."""
+    from pipeline.rda_parser import load_rda
+    from pipeline.effect_inference import infer_outcome_types
+    from pipeline.orchestrator import reproduce_outcome, select_primary_outcome
+
+    rda_dir = Path(r"C:\Users\user\OneDrive - NHS\Documents\Pairwise70\data")
+    rda_files = sorted(rda_dir.glob("*.rda"))
+    if not rda_files:
+        pytest.skip("Pairwise70 not available")
+
+    review = load_rda(rda_files[0])
+    for outcome in review["outcomes"]:
+        infer_outcome_types(outcome)
+
+    if not review["outcomes"]:
+        pytest.skip("No outcomes in first RDA")
+
+    primary = select_primary_outcome(review["outcomes"])
+    report = reproduce_outcome(review["review_id"], primary)
+
+    assert report["review_id"] is not None
+    assert report["study_level"]["total_k"] >= 1
+    assert report["errors"]["primary_error_source"] is not None or report["errors"]["success"] > 0
+    assert report["cert"]["provenance_chain"] is not None

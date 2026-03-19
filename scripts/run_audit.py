@@ -47,11 +47,11 @@ def main():
     print(f"\nSaved {len(all_reports)} reports to {summary_path}")
 
     # Headline stats
-    study_total = sum(r["study_level"]["total_studies"] for r in all_reports)
+    study_total = sum(r["study_level"]["total_k"] for r in all_reports)
     study_matched = sum(r["study_level"]["matched_moderate"] for r in all_reports)
     review_classified = [r for r in all_reports if r["review_level"] is not None]
-    reproduced = sum(1 for r in review_classified if r["review_level"]["tier"] == "reproduced")
-    major = sum(1 for r in review_classified if r["review_level"]["tier"] == "major_discrepancy")
+    reproduced = sum(1 for r in review_classified if r["review_level"]["classification"] == "reproduced")
+    major = sum(1 for r in review_classified if r["review_level"]["classification"] == "major_discrepancy")
 
     print(f"\n=== HEADLINE RESULTS ===")
     print(f"Reviews processed: {len(all_reports)}")

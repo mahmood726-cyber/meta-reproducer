@@ -39,7 +39,7 @@ def main():
 
     print(f"\n=== Table 2: Review-level classification ===")
     classified = [r for r in reports if r["review_level"] is not None]
-    tiers = Counter(r["review_level"]["tier"] for r in classified)
+    tiers = Counter(r["review_level"]["classification"] for r in classified)
     insufficient = sum(1 for r in reports if r["review_level"] is None)
     print(f"  Reproduced: {tiers.get('reproduced', 0)}")
     print(f"  Minor discrepancy: {tiers.get('minor_discrepancy', 0)}")
@@ -63,13 +63,15 @@ def main():
                           "review_tier", "ref_pooled", "repro_pooled", "pct_diff"])
         for r in reports:
             rl = r.get("review_level") or {}
+            ref_p = r.get("reference_pooled") or {}
+            rep_p = r.get("reproduced_pooled") or {}
             writer.writerow([
                 r["review_id"], r["outcome_label"], r.get("inferred_effect_type"),
-                r["study_level"]["total_studies"], r["study_level"]["n_with_pdf"],
+                r["study_level"]["total_k"], r["study_level"]["n_with_pdf"],
                 r["study_level"]["matched_strict"], r["study_level"]["matched_moderate"],
-                rl.get("tier", "insufficient"),
-                rl.get("reference_pooled"), rl.get("reproduced_pooled"),
-                rl.get("pct_difference"),
+                rl.get("classification", "insufficient"),
+                ref_p.get("pooled"), rep_p.get("pooled"),
+                rl.get("rel_diff"),
             ])
     print(f"\nCSV saved: {csv_path}")
 
