@@ -1357,6 +1357,16 @@ tbody td {
     }
   }
 
+  // -------------------- Test Hook (no-op in production) --------------------
+  // Exposes an injection function for Selenium tests so they can set `data`
+  // and trigger renderAll() without going through the file-input flow.
+  window.__loadDashboardData = function(payload) {
+    if (!Array.isArray(payload)) return;
+    data = payload;
+    document.getElementById('csvExport').disabled = false;
+    renderAll();
+  };
+
 })();
 </script>
 </body>
