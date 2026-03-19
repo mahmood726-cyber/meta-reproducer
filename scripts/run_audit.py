@@ -10,6 +10,10 @@ from pipeline.rda_parser import load_all_rdas
 from pipeline.effect_inference import infer_outcome_types
 from pipeline.orchestrator import reproduce_outcome, select_primary_outcome
 
+# Also import the linking module
+sys.path.insert(0, str(Path(__file__).parent))
+from link_mega_data import build_study_pdf_map, link_reviews
+
 RDA_DIR = Path(r"C:\Users\user\OneDrive - NHS\Documents\Pairwise70\data")
 RESULTS_DIR = Path(__file__).parent.parent / "data" / "results"
 
@@ -20,6 +24,11 @@ def main():
     print("Loading all RDA files...")
     reviews = load_all_rdas(RDA_DIR)
     print(f"Loaded {len(reviews)} reviews")
+
+    # Link studies to existing PDFs from mega gold standard
+    print("Linking studies to PDFs...")
+    pdf_map = build_study_pdf_map()
+    link_reviews(reviews, pdf_map)
 
     all_reports = []
     for i, review in enumerate(reviews):

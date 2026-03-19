@@ -56,7 +56,7 @@ def main():
         print(f"  {cat}: {count}")
 
     csv_path = RESULTS_DIR / "summary_table.csv"
-    with open(csv_path, "w", newline="") as f:
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(["review_id", "outcome", "effect_type", "total_k",
                           "n_with_pdf", "matched_strict", "matched_moderate",

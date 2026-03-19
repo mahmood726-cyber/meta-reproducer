@@ -16,6 +16,18 @@ def build_study_pdf_map() -> dict:
     if not matched_path.exists():
         print(f"WARNING: {matched_path} not found")
         return {}
+    # Build index of actual PDF files on disk: pmcid -> path
+    pdf_by_pmcid = {}
+    if PDF_DIR.exists():
+        for pdf in PDF_DIR.glob("*.pdf"):
+            # Filename format: Author_Year_Year_PMCID.pdf
+            parts = pdf.stem.split("_")
+            # PMCID is the last part (PMCxxxxxxx)
+            for part in reversed(parts):
+                if part.startswith("PMC"):
+                    pdf_by_pmcid[part] = str(pdf)
+                    break
+
     mapping = {}
     with open(matched_path) as f:
         for line in f:
@@ -26,13 +38,13 @@ def build_study_pdf_map() -> dict:
             pmcid = entry.get("pmcid")
             if not pmcid:
                 continue
-            pdf_path = PDF_DIR / f"{pmcid}.pdf"
-            if not pdf_path.exists():
+            pdf_path = pdf_by_pmcid.get(pmcid)
+            if not pdf_path:
                 continue
             author = entry.get("first_author", "")
             year = entry.get("year")
             key = (author.strip(), year)
-            mapping[key] = str(pdf_path)
+            mapping[key] = pdf_path
     return mapping
 
 

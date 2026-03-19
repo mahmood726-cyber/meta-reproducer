@@ -191,6 +191,9 @@ def reproduce_outcome(review_id: str, outcome: dict) -> dict:
         reference_pooled = meta_engine.pool_dl(ref_yi, ref_sei)
 
     # ----- (b) Extract effects for studies with PDFs -----
+    # Load pre-computed extraction results (avoids re-running on 1,290 PDFs)
+    existing_extractions = effect_extractor.load_existing_extractions()
+
     extractions: list[dict] = []
     n_with_pdf = 0
 
@@ -198,16 +201,24 @@ def reproduce_outcome(review_id: str, outcome: dict) -> dict:
         study_id = s.get("study_id", "")
         pdf_path = s.get("pdf_path")
         cochrane_mean = s.get("mean")
+        year = s.get("year")
 
         extraction_result: Optional[dict] = None
 
         if pdf_path is not None:
             n_with_pdf += 1
-            # Run extraction
-            try:
-                raw_extractions = effect_extractor.extract_from_pdf(pdf_path)
-            except Exception:
-                raw_extractions = []
+
+            # Try pre-computed results first
+            raw_extractions = effect_extractor.get_extraction_for_study(
+                study_id, year, existing_extractions
+            )
+
+            # Fall back to live extraction if no pre-computed result
+            if raw_extractions is None:
+                try:
+                    raw_extractions = effect_extractor.extract_from_pdf(pdf_path)
+                except Exception:
+                    raw_extractions = []
 
             # Find the best match against Cochrane mean
             if raw_extractions and cochrane_mean is not None:
