@@ -27,6 +27,7 @@ import csv
 import io
 import math
 import os
+import re
 import zipfile
 from pathlib import Path
 from typing import Optional
@@ -100,6 +101,53 @@ def _load_pmid_to_nct(zf: zipfile.ZipFile, pmid_set: set[str]) -> dict[str, str]
     for pmid, options in candidates.items():
         options.sort()  # sort by (priority, nct_id)
         mapping[pmid] = options[0][1]
+    return mapping
+
+
+# Regex for extracting DOIs from citation text
+_DOI_RE = re.compile(r"10\.\d{4,}/[^\s]+")
+
+
+def _load_doi_to_nct(
+    zf: zipfile.ZipFile, doi_set: set[str]
+) -> dict[str, str]:
+    """Stream study_references.txt, extract DOIs from citation text.
+
+    Returns {doi: nct_id} for DOIs in *doi_set*.
+
+    Uses the same RESULT/DERIVED filtering and deterministic selection
+    as _load_pmid_to_nct: prefers RESULT over DERIVED, then picks the
+    lexicographically smallest NCT for determinism.
+    """
+    # Collect all candidates: {doi: [(priority, nct_id), ...]}
+    candidates: dict[str, list[tuple[int, str]]] = {}
+    # Normalise DOI set to lowercase for case-insensitive matching
+    doi_set_lower = {d.lower().rstrip(".") for d in doi_set}
+
+    for row in _read_zip_csv(zf, "study_references.txt"):
+        nct = (row.get("nct_id") or "").strip()
+        ref_type = (row.get("reference_type") or "").strip()
+        if not nct:
+            continue
+        priority = _REF_TYPE_PRIORITY.get(ref_type, 99)
+        if priority > 1:  # Skip BACKGROUND and unknown types
+            continue
+
+        citation = (row.get("citation") or "")
+        for m in _DOI_RE.finditer(citation):
+            # Clean trailing punctuation from DOI
+            doi_raw = m.group(0).rstrip(".,;)")
+            doi_lower = doi_raw.lower()
+            if doi_lower in doi_set_lower:
+                if doi_lower not in candidates:
+                    candidates[doi_lower] = []
+                candidates[doi_lower].append((priority, nct))
+
+    # Pick best NCT per DOI: lowest priority, then lexicographic NCT
+    mapping: dict[str, str] = {}
+    for doi, options in candidates.items():
+        options.sort()  # sort by (priority, nct_id)
+        mapping[doi] = options[0][1]
     return mapping
 
 
@@ -347,6 +395,7 @@ def compute_effects_from_raw(
 def build_aact_lookup_local(
     zip_path: str | Path | None = None,
     pmids: list[str] | None = None,
+    dois: list[str] | None = None,
 ) -> dict:
     """Build AACT lookup from local ZIP export (no network needed).
 
@@ -354,26 +403,39 @@ def build_aact_lookup_local(
     ----------
     zip_path : path to AACT ZIP export; defaults to AACT_ZIP_PATH
     pmids    : list of PMID strings to look up
+    dois     : optional list of DOI strings for studies without PMIDs;
+               DOIs are extracted from citation text in study_references.txt
 
     Returns
     -------
-    {pmid: {"nct_id": str, "effects": [...]}} or empty dict on failure
+    {key: {"nct_id": str, "effects": [...]}} where key is PMID or DOI.
+    Returns empty dict on failure.
     """
     zip_path = Path(zip_path) if zip_path else AACT_ZIP_PATH
     if not zip_path.exists():
         print(f"AACT ZIP not found: {zip_path}")
         return {}
-    if not pmids:
+    if not pmids and not dois:
         return {}
 
-    pmid_set = set(str(p) for p in pmids)
+    pmid_set = set(str(p) for p in pmids) if pmids else set()
+    doi_set = set(str(d) for d in dois) if dois else set()
     print(f"Loading AACT from local ZIP ({zip_path.name})...")
 
     with zipfile.ZipFile(zip_path, "r") as zf:
-        # Step 1: PMID → NCT mapping
-        pmid_to_nct = _load_pmid_to_nct(zf, pmid_set)
+        # Step 1a: PMID → NCT mapping
+        pmid_to_nct = _load_pmid_to_nct(zf, pmid_set) if pmid_set else {}
         nct_set = set(pmid_to_nct.values())
         print(f"  PMID->NCT: {len(pmid_to_nct)} mapped ({len(nct_set)} unique NCTs)")
+
+        # Step 1b: DOI → NCT mapping (for studies without PMIDs)
+        doi_to_nct: dict[str, str] = {}
+        if doi_set:
+            # Exclude DOIs that already resolved via PMID
+            already_mapped_ncts = set(pmid_to_nct.values())
+            doi_to_nct = _load_doi_to_nct(zf, doi_set)
+            nct_set |= set(doi_to_nct.values())
+            print(f"  DOI->NCT: {len(doi_to_nct)} mapped")
 
         # Step 2: Pre-computed effects for those NCTs
         effects = _load_precomputed_effects(zf, nct_set)
@@ -394,10 +456,16 @@ def build_aact_lookup_local(
         merged.extend(computed.get(nct_id, []))
         merged_effects[nct_id] = merged
 
-    # Assemble lookup
+    # Assemble lookup — keyed by PMID or DOI
     lookup: dict[str, dict] = {}
     for pmid, nct_id in pmid_to_nct.items():
         lookup[pmid] = {
+            "nct_id": nct_id,
+            "effects": merged_effects.get(nct_id, []),
+            "raw": [],
+        }
+    for doi, nct_id in doi_to_nct.items():
+        lookup[doi] = {
             "nct_id": nct_id,
             "effects": merged_effects.get(nct_id, []),
             "raw": [],

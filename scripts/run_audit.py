@@ -14,7 +14,7 @@ from pipeline.orchestrator import reproduce_outcome, select_primary_outcome
 
 # Also import the linking module
 sys.path.insert(0, str(Path(__file__).parent))
-from link_mega_data import build_study_pdf_map, build_study_pmid_map, link_reviews
+from link_mega_data import build_study_pdf_map, build_study_pmid_map, build_study_doi_map, link_reviews
 
 RDA_DIR = Path(r"C:\Users\user\OneDrive - NHS\Documents\Pairwise70\data")
 RESULTS_DIR = Path(__file__).parent.parent / "data" / "results"
@@ -27,30 +27,37 @@ def main():
     reviews = load_all_rdas(RDA_DIR)
     print(f"Loaded {len(reviews)} reviews")
 
-    # Link studies to existing PDFs and PMIDs from mega gold standard
-    print("Linking studies to PDFs and PMIDs...")
+    # Link studies to existing PDFs, PMIDs, and DOIs from mega gold standard
+    print("Linking studies to PDFs, PMIDs, and DOIs...")
     pdf_map = build_study_pdf_map()
     pmid_map = build_study_pmid_map()
-    link_reviews(reviews, pdf_map, pmid_map)
+    doi_map = build_study_doi_map()
+    link_reviews(reviews, pdf_map, pmid_map, doi_map)
 
     # Initialize AACT CT.gov lookup (second extraction pathway)
     # Prefer local ZIP (fast, no network) → fall back to remote PostgreSQL
     from pipeline.ctgov_extractor import (
         build_aact_lookup_local, get_connection, build_aact_lookup,
     )
-    # Collect all PMIDs from linked studies
+    # Collect all PMIDs and DOIs from linked studies
     all_pmids = []
+    all_dois = []
     for review in reviews:
         for outcome in review["outcomes"]:
             for study in outcome["studies"]:
                 pmid = study.get("pmid")
                 if pmid:
                     all_pmids.append(str(pmid))
+                # Collect DOIs for studies without PMIDs
+                doi = study.get("doi")
+                if doi and not pmid:
+                    all_dois.append(str(doi))
     all_pmids = list(set(all_pmids))
-    print(f"Looking up {len(all_pmids)} PMIDs in AACT...")
+    all_dois = list(set(all_dois))
+    print(f"Looking up {len(all_pmids)} PMIDs + {len(all_dois)} DOIs in AACT...")
 
     # Try local ZIP first
-    aact_lookup = build_aact_lookup_local(pmids=all_pmids)
+    aact_lookup = build_aact_lookup_local(pmids=all_pmids, dois=all_dois)
     if not aact_lookup:
         # Fall back to remote
         conn = get_connection()
@@ -98,6 +105,7 @@ def main():
     # Headline stats
     study_total = sum(r["study_level"]["total_k"] for r in all_reports)
     study_matched = sum(r["study_level"]["matched_moderate"] for r in all_reports)
+    study_matched_weak = sum(r["study_level"].get("matched_weak", 0) for r in all_reports)
     review_classified = [r for r in all_reports if r["review_level"] is not None]
     reproduced = sum(1 for r in review_classified if r["review_level"]["classification"] == "reproduced")
     major = sum(1 for r in review_classified if r["review_level"]["classification"] == "major_discrepancy")
@@ -108,6 +116,7 @@ def main():
     print(f"\n=== HEADLINE RESULTS ({elapsed:.0f}s) ===")
     print(f"Reviews processed: {len(all_reports)} ({n_errors} errors)")
     print(f"Study-level: {study_matched}/{study_total} matched within 10% (moderate tier)")
+    print(f"Study-level: {study_matched_weak}/{study_total} matched within 20% (weak tier)")
     print(f"Review-level classified: {len(review_classified)} ({n_unclassified} unclassifiable)")
     print(f"  Reproduced: {reproduced}")
     print(f"  Major discrepancy: {major}")

@@ -75,18 +75,50 @@ def build_study_pmid_map() -> dict:
     return mapping
 
 
+def build_study_doi_map() -> dict:
+    """Build mapping: (first_author, year) -> doi from mega_matched.jsonl.
+
+    Returns {(author_str, year_int): doi_str} for entries with a DOI but no PMID.
+    This supplements the PMID map for studies that lack PMIDs.
+    """
+    matched_path = MEGA_DIR / "mega_matched.jsonl"
+    if not matched_path.exists():
+        return {}
+
+    mapping = {}
+    with open(matched_path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            entry = json.loads(line)
+            # Only include entries WITH a DOI but WITHOUT a PMID
+            doi = entry.get("doi")
+            pmid = entry.get("pmid")
+            if not doi or pmid:
+                continue
+            author = entry.get("first_author", "")
+            year = entry.get("year")
+            key = (author.strip(), year)
+            mapping[key] = str(doi)
+    return mapping
+
+
 def link_reviews(reviews: list[dict], pdf_map: dict,
-                  pmid_map: dict | None = None) -> None:
-    """Mutate reviews in-place: set pdf_path and pmid on matching studies.
+                  pmid_map: dict | None = None,
+                  doi_map: dict | None = None) -> None:
+    """Mutate reviews in-place: set pdf_path, pmid, and doi on matching studies.
 
     Parameters
     ----------
     reviews  : list of review dicts (each with outcomes -> studies)
     pdf_map  : {(author, year): pdf_path}
     pmid_map : {(author, year): pmid} — optional; built by build_study_pmid_map()
+    doi_map  : {(author, year): doi} — optional; built by build_study_doi_map()
     """
     linked = 0
     pmid_linked = 0
+    doi_linked = 0
     total = 0
     for review in reviews:
         for outcome in review["outcomes"]:
@@ -101,9 +133,14 @@ def link_reviews(reviews: list[dict], pdf_map: dict,
                 if pmid_map and key in pmid_map:
                     study["pmid"] = pmid_map[key]
                     pmid_linked += 1
+                if doi_map and key in doi_map:
+                    study["doi"] = doi_map[key]
+                    doi_linked += 1
     print(f"Linked {linked}/{total} studies to PDFs ({100*linked/max(total,1):.1f}%)")
     if pmid_map is not None:
         print(f"Linked {pmid_linked}/{total} studies to PMIDs ({100*pmid_linked/max(total,1):.1f}%)")
+    if doi_map is not None:
+        print(f"Linked {doi_linked}/{total} studies to DOIs ({100*doi_linked/max(total,1):.1f}%)")
 
 
 if __name__ == "__main__":

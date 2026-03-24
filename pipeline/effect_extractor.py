@@ -39,6 +39,7 @@ _MEGA_EVAL_PATH = (
 
 _TIER_5PCT = 0.05
 _TIER_10PCT = 0.10
+_TIER_20PCT = 0.20
 
 
 # ---------------------------------------------------------------------------
@@ -69,11 +70,14 @@ def _tier_from_rel(rel: float, prefix: str) -> Tuple[bool, Optional[str]]:
     """Map a relative difference to a match tier string.
 
     Returns (matched, tier_str | None).
+    Tiers: 5% (strict), 10% (moderate), 20% (weak — reporting only).
     """
     if rel <= _TIER_5PCT:
         return True, f"{prefix}_5pct"
     if rel <= _TIER_10PCT:
         return True, f"{prefix}_10pct"
+    if rel <= _TIER_20PCT:
+        return True, f"{prefix}_20pct"
     return False, None
 
 

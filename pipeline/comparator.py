@@ -25,6 +25,9 @@ MODERATE_TIERS: set[str] = {
     "computed_5pct", "computed_10pct",
     "aact_5pct", "aact_10pct",
 }
+WEAK_TIERS: set[str] = MODERATE_TIERS | {
+    "direct_20pct", "computed_20pct", "aact_20pct",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -75,6 +78,10 @@ def assess_study_level(
         1 for e in extractions
         if e.get("match_tier") in MODERATE_TIERS and e.get("matched", False)
     )
+    matched_weak = sum(
+        1 for e in extractions
+        if e.get("match_tier") in WEAK_TIERS and e.get("matched", False)
+    )
 
     denom = n_with_pdf if n_with_pdf > 0 else 1  # guard div-by-zero
     no_pdf = total_k - n_with_pdf
@@ -85,8 +92,10 @@ def assess_study_level(
         "no_pdf": no_pdf,
         "matched_strict": matched_strict,
         "matched_moderate": matched_moderate,
+        "matched_weak": matched_weak,
         "rate_strict": matched_strict / denom,
         "rate_moderate": matched_moderate / denom,
+        "rate_weak": matched_weak / denom,
     }
 
 

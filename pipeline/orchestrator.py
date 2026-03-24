@@ -25,6 +25,9 @@ from scipy import stats
 from pipeline import meta_engine, comparator, taxonomy, truthcert, effect_extractor
 from pipeline import ctgov_extractor
 
+# Import tier sets for filtering (weak matches excluded from pooling)
+from pipeline.comparator import MODERATE_TIERS
+
 
 # ---------------------------------------------------------------------------
 # Type priority for outcome selection (lower = preferred)
@@ -284,11 +287,14 @@ def reproduce_outcome(
             if ext is not None and ext.get("matched", False):
                 continue
 
-            # P1-10: Also check nct_id if available on the study
+            # P1-10: Also check nct_id and DOI if available on the study
             nct_id = s.get("nct_id")
+            doi = s.get("doi")
             aact_key = pmid if (pmid and pmid in aact_lookup) else None
             if aact_key is None and nct_id and nct_id in aact_lookup:
                 aact_key = nct_id
+            if aact_key is None and doi and doi.lower() in aact_lookup:
+                aact_key = doi.lower()
             if aact_key and cochrane_mean is not None:
                 aact_data = aact_lookup[aact_key]
                 if aact_data["effects"]:
@@ -326,6 +332,9 @@ def reproduce_outcome(
     )
 
     # ----- (d) Reproduced pooled from matched extractions -----
+    # Only moderate-tier matches (5%/10%) are used for pooling and
+    # review-level classification.  Weak (20%) matches are reported in
+    # study_level stats but excluded here to avoid inflating agreement.
     repro_yi: list[float] = []
     repro_sei: list[float] = []
     k_extracted = 0
@@ -333,6 +342,9 @@ def reproduce_outcome(
     for idx, s in enumerate(studies):
         ext = extractions[idx] if idx < len(extractions) else None
         if ext is None or not ext.get("matched", False):
+            continue
+        # Exclude weak-only matches from pooling
+        if ext.get("match_tier") not in MODERATE_TIERS:
             continue
 
         extracted_effect = ext.get("extracted_effect")
