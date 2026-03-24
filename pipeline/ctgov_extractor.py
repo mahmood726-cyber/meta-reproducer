@@ -32,10 +32,9 @@ from typing import Optional
 
 from dotenv import load_dotenv
 
-# Load AACT credentials for remote fallback
+# Load AACT credentials for remote fallback (P1-7: single .env location)
 _project_root = Path(__file__).resolve().parent.parent
 load_dotenv(_project_root / ".env")
-load_dotenv(Path(r"C:\Users\user\Downloads\Metaprojects\ctgov-search-strategies\.env"))
 
 # Default local AACT export path
 AACT_ZIP_PATH = Path(
@@ -69,14 +68,36 @@ def _read_zip_csv(zf: zipfile.ZipFile, filename: str):
         yield from reader
 
 
+_REF_TYPE_PRIORITY = {"RESULT": 0, "DERIVED": 1, "BACKGROUND": 2}
+
+
 def _load_pmid_to_nct(zf: zipfile.ZipFile, pmid_set: set[str]) -> dict[str, str]:
-    """Stream study_references.txt, return {pmid: nct_id} for target PMIDs."""
-    mapping: dict[str, str] = {}
+    """Stream study_references.txt, return {pmid: nct_id} for target PMIDs.
+
+    P0-3: Only accepts RESULT and DERIVED reference types (not BACKGROUND).
+    P0-4: When multiple NCTs map to one PMID, prefers RESULT over DERIVED,
+           then picks the lexicographically smallest NCT for determinism.
+    """
+    # Collect all candidates: {pmid: [(priority, nct_id), ...]}
+    candidates: dict[str, list[tuple[int, str]]] = {}
     for row in _read_zip_csv(zf, "study_references.txt"):
         pmid = (row.get("pmid") or "").strip()
         nct = (row.get("nct_id") or "").strip()
-        if pmid in pmid_set and nct:
-            mapping[pmid] = nct
+        ref_type = (row.get("reference_type") or "").strip()
+        if pmid not in pmid_set or not nct:
+            continue
+        priority = _REF_TYPE_PRIORITY.get(ref_type, 99)
+        if priority > 1:  # Skip BACKGROUND and unknown types
+            continue
+        if pmid not in candidates:
+            candidates[pmid] = []
+        candidates[pmid].append((priority, nct))
+
+    # Pick best NCT per PMID: lowest priority, then lexicographic NCT
+    mapping: dict[str, str] = {}
+    for pmid, options in candidates.items():
+        options.sort()  # sort by (priority, nct_id)
+        mapping[pmid] = options[0][1]
     return mapping
 
 
@@ -183,8 +204,8 @@ def get_connection():
             sslmode="require",
             connect_timeout=15,
         )
-    except Exception as e:
-        print(f"AACT connection failed: {e}")
+    except Exception:
+        print("AACT connection failed (check credentials and network)")
         return None
 
 
@@ -195,27 +216,33 @@ def get_connection():
 def batch_pmid_to_nct(conn, pmids: list[str]) -> dict[str, str]:
     """Map PMIDs to NCT IDs via study_references table.
 
-    Parameters
-    ----------
-    conn   : psycopg2 connection
-    pmids  : list of PMID strings
-
-    Returns
-    -------
-    dict mapping {pmid_str: nct_id}
+    P0-3: Filters to RESULT/DERIVED types only (not BACKGROUND).
+    P0-4: Deterministic — prefers RESULT, then lexicographic NCT.
+    P1-6: Uses context manager for cursor cleanup.
     """
     if not pmids:
         return {}
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT DISTINCT pmid, nct_id FROM ctgov.study_references
-        WHERE pmid = ANY(%s)
-    """, (pmids,))
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT pmid, nct_id, reference_type
+            FROM ctgov.study_references
+            WHERE pmid = ANY(%s)
+              AND reference_type IN ('RESULT', 'DERIVED')
+        """, (pmids,))
+        candidates: dict[str, list[tuple[int, str]]] = {}
+        for pmid, nct_id, ref_type in cur.fetchall():
+            if not pmid or not nct_id:
+                continue
+            key = str(pmid)
+            priority = 0 if ref_type == "RESULT" else 1
+            if key not in candidates:
+                candidates[key] = []
+            candidates[key].append((priority, nct_id))
+
     mapping: dict[str, str] = {}
-    for pmid, nct_id in cur.fetchall():
-        if pmid and nct_id:
-            mapping[str(pmid)] = nct_id
-    cur.close()
+    for pmid, options in candidates.items():
+        options.sort()
+        mapping[pmid] = options[0][1]
     return mapping
 
 
@@ -230,25 +257,24 @@ def fetch_precomputed_effects(conn, nct_ids: list[str]) -> dict[str, list[dict]]
     """
     if not nct_ids:
         return {}
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT nct_id, param_type, param_value,
-               ci_lower_limit, ci_upper_limit, method
-        FROM ctgov.outcome_analyses
-        WHERE nct_id = ANY(%s) AND param_value IS NOT NULL
-    """, (nct_ids,))
     results: dict[str, list[dict]] = {}
-    for nct_id, param_type, value, ci_lo, ci_hi, method in cur.fetchall():
-        if nct_id not in results:
-            results[nct_id] = []
-        results[nct_id].append({
-            "param_type": param_type or "",
-            "point_estimate": float(value) if value is not None else None,
-            "ci_lower": float(ci_lo) if ci_lo is not None else None,
-            "ci_upper": float(ci_hi) if ci_hi is not None else None,
-            "method": method or "",
-        })
-    cur.close()
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT nct_id, param_type, param_value,
+                   ci_lower_limit, ci_upper_limit, method
+            FROM ctgov.outcome_analyses
+            WHERE nct_id = ANY(%s) AND param_value IS NOT NULL
+        """, (nct_ids,))
+        for nct_id, param_type, value, ci_lo, ci_hi, method in cur.fetchall():
+            if nct_id not in results:
+                results[nct_id] = []
+            results[nct_id].append({
+                "param_type": param_type or "",
+                "point_estimate": float(value) if value is not None else None,
+                "ci_lower": float(ci_lo) if ci_lo is not None else None,
+                "ci_upper": float(ci_hi) if ci_hi is not None else None,
+                "method": method or "",
+            })
     return results
 
 
@@ -265,34 +291,33 @@ def fetch_raw_outcomes(conn, nct_ids: list[str]) -> dict[str, list[dict]]:
     """
     if not nct_ids:
         return {}
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT om.nct_id, o.title AS outcome_title,
-               rg.title AS group_title, rg.description AS group_desc,
-               rg.ctgov_group_code,
-               om.param_type, om.param_value_num, om.dispersion_value_num
-        FROM ctgov.outcome_measurements om
-        JOIN ctgov.outcomes o
-            ON om.outcome_id = o.id AND om.nct_id = o.nct_id
-        JOIN ctgov.result_groups rg
-            ON om.result_group_id = rg.id AND om.nct_id = rg.nct_id
-        WHERE om.nct_id = ANY(%s)
-    """, (nct_ids,))
     results: dict[str, list[dict]] = {}
-    for row in cur.fetchall():
-        nct_id = row[0]
-        if nct_id not in results:
-            results[nct_id] = []
-        results[nct_id].append({
-            "outcome_title": row[1] or "",
-            "group_title": row[2] or "",
-            "group_description": row[3] or "",
-            "ctgov_group_code": row[4] or "",
-            "param_type": row[5] or "",
-            "param_value": float(row[6]) if row[6] is not None else None,
-            "dispersion_value": float(row[7]) if row[7] is not None else None,
-        })
-    cur.close()
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT om.nct_id, o.title AS outcome_title,
+                   rg.title AS group_title, rg.description AS group_desc,
+                   rg.ctgov_group_code,
+                   om.param_type, om.param_value_num, om.dispersion_value_num
+            FROM ctgov.outcome_measurements om
+            JOIN ctgov.outcomes o
+                ON om.outcome_id = o.id AND om.nct_id = o.nct_id
+            JOIN ctgov.result_groups rg
+                ON om.result_group_id = rg.id AND om.nct_id = rg.nct_id
+            WHERE om.nct_id = ANY(%s)
+        """, (nct_ids,))
+        for row in cur.fetchall():
+            nct_id = row[0]
+            if nct_id not in results:
+                results[nct_id] = []
+            results[nct_id].append({
+                "outcome_title": row[1] or "",
+                "group_title": row[2] or "",
+                "group_description": row[3] or "",
+                "ctgov_group_code": row[4] or "",
+                "param_type": row[5] or "",
+                "param_value": float(row[6]) if row[6] is not None else None,
+                "dispersion_value": float(row[7]) if row[7] is not None else None,
+            })
     return results
 
 
@@ -321,18 +346,19 @@ def match_aact_effect(
     aact_effects: list[dict],
     cochrane_mean: float,
     is_ratio: bool,
+    effect_type: str = "",
 ) -> Optional[dict]:
     """Try to match AACT pre-computed effects against a Cochrane value.
 
-    Uses classify_match from effect_extractor for consistency with the PDF
-    pathway.  Iterates all effects and picks the closest match that passes
-    the 10% threshold.
+    P0-1: Filters effects by param_type compatibility with Cochrane effect_type.
+    P1-3: For ratio measures, also tries reciprocal match (1/cochrane_mean).
 
     Parameters
     ----------
     aact_effects  : list of effect dicts from fetch_precomputed_effects
     cochrane_mean : Cochrane reference point estimate (natural scale)
     is_ratio      : True for ratio measures (OR, RR, HR)
+    effect_type   : Cochrane effect type string (e.g. "OR", "HR", "MD")
 
     Returns
     -------
@@ -340,35 +366,57 @@ def match_aact_effect(
     """
     from pipeline.effect_extractor import classify_match
 
+    # P0-1: Filter to type-compatible effects first
+    compatible = []
+    for eff in aact_effects:
+        if eff.get("point_estimate") is None:
+            continue
+        aact_type = PARAM_TYPE_MAP.get(eff.get("param_type", ""), "")
+        if effect_type and aact_type and aact_type != effect_type:
+            continue  # Skip type-mismatched effects
+        compatible.append(eff)
+
+    # If no type-compatible effects, try all effects as fallback
+    if not compatible:
+        compatible = [e for e in aact_effects if e.get("point_estimate") is not None]
+
     best: Optional[dict] = None
     best_diff = float("inf")
 
-    for eff in aact_effects:
-        pe = eff.get("point_estimate")
-        if pe is None:
-            continue
+    # P1-3: For ratio measures, also try reciprocal Cochrane mean
+    targets = [cochrane_mean]
+    if is_ratio and cochrane_mean is not None and cochrane_mean > 0:
+        reciprocal = 1.0 / cochrane_mean
+        targets.append(reciprocal)
 
-        result = classify_match(
-            extracted=pe,
-            cochrane_mean=cochrane_mean,
-            is_ratio=is_ratio,
-        )
-        if result["matched"]:
-            diff = result.get("pct_difference", float("inf"))
-            if diff is not None and diff < best_diff:
-                best_diff = diff
-                # Remap tier names to indicate AACT source
-                tier = result["match_tier"].replace("direct_", "aact_")
-                best = {
-                    "matched": True,
-                    "match_tier": tier,
-                    "pct_difference": diff,
-                    "point_estimate": pe,
-                    "ci_lower": eff.get("ci_lower"),
-                    "ci_upper": eff.get("ci_upper"),
-                    "source": "aact",
-                    "aact_param_type": eff.get("param_type", ""),
-                }
+    for eff in compatible:
+        pe = eff["point_estimate"]
+
+        for target in targets:
+            result = classify_match(
+                extracted=pe,
+                cochrane_mean=target,
+                is_ratio=is_ratio,
+            )
+            if result["matched"]:
+                diff = result.get("pct_difference", float("inf"))
+                if diff is not None and diff < best_diff:
+                    best_diff = diff
+                    # Remap tier names: direct_ or computed_ → aact_
+                    raw_tier = result["match_tier"] or ""
+                    tier = raw_tier.replace("direct_", "aact_").replace("computed_", "aact_")
+                    is_reciprocal = (target != cochrane_mean)
+                    best = {
+                        "matched": True,
+                        "match_tier": tier,
+                        "pct_difference": diff,
+                        "point_estimate": pe,
+                        "ci_lower": eff.get("ci_lower"),
+                        "ci_upper": eff.get("ci_upper"),
+                        "source": "aact",
+                        "aact_param_type": eff.get("param_type", ""),
+                        "reciprocal_match": is_reciprocal,
+                    }
 
     return best
 

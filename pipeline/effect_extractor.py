@@ -45,8 +45,20 @@ _TIER_10PCT = 0.10
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _rel_diff(a: float, b: float) -> float:
-    """Relative difference |a - b| / |b|.  Returns inf when b ≈ 0."""
+def _rel_diff(a: float, b: float, log_scale: bool = False) -> float:
+    """Relative difference.  Returns inf when b ≈ 0.
+
+    P1-4: When log_scale=True, computes on log scale for symmetric
+    comparison of ratio measures: |log(a) - log(b)| / |log(b)|.
+    """
+    if log_scale:
+        if a <= 0 or b <= 0:
+            return math.inf
+        la, lb = math.log(a), math.log(b)
+        denom = abs(lb)
+        if denom < 1e-15:
+            return math.inf
+        return abs(la - lb) / denom
     denom = abs(b)
     if denom < 1e-15:
         return math.inf
@@ -100,7 +112,7 @@ def classify_match(
     """
     # --- Try direct extraction first ---
     if extracted is not None:
-        rel = _rel_diff(extracted, cochrane_mean)
+        rel = _rel_diff(extracted, cochrane_mean, log_scale=is_ratio)
         matched, tier = _tier_from_rel(rel, "direct")
         return {
             "matched": matched,
@@ -110,7 +122,7 @@ def classify_match(
 
     # --- Fall back to computed effect ---
     if computed_effect is not None:
-        rel = _rel_diff(computed_effect, cochrane_mean)
+        rel = _rel_diff(computed_effect, cochrane_mean, log_scale=is_ratio)
         matched, tier = _tier_from_rel(rel, "computed")
         return {
             "matched": matched,

@@ -114,16 +114,18 @@ def test_match_aact_effect_md():
 
 
 def test_match_aact_effect_tier_10pct():
-    """Effect within 10% but outside 5% gets aact_10pct tier."""
+    """Effect within 10% log-scale but outside 5% gets aact_10pct tier.
+
+    P1-4: Log-scale comparison. |log(0.737)-log(0.75)|/|log(0.75)| ≈ 6.1%.
+    """
     from pipeline.ctgov_extractor import match_aact_effect
 
-    # 0.82 vs 0.75 = 9.3% difference -> 10pct tier
     effects = [
         {
-            "point_estimate": 0.82,
+            "point_estimate": 0.737,
             "ci_lower": 0.6,
-            "ci_upper": 1.0,
-            "param_type": "HR",
+            "ci_upper": 0.9,
+            "param_type": "Hazard Ratio (HR)",
             "method": "Cox",
         }
     ]

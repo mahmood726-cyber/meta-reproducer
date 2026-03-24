@@ -134,14 +134,22 @@ def assess_review_level(
     ref_sig   = _is_significant(ref_pooled,   ref_se,   alpha)
     repro_sig = _is_significant(repro_pooled, repro_se, alpha)
 
-    same_direction = (ref_pooled * repro_pooled) > 0
-    same_sig       = ref_sig == repro_sig
+    # P1-2: Near-zero effects have no meaningful direction
+    _null_threshold = 1e-4
+    if abs(ref_pooled) < _null_threshold or abs(repro_pooled) < _null_threshold:
+        same_direction = True
+    else:
+        same_direction = (ref_pooled * repro_pooled) > 0
+    same_sig = ref_sig == repro_sig
 
-    rel_diff = (
-        abs(repro_pooled - ref_pooled) / max(abs(ref_pooled), 1e-10)
-        if ref_pooled != 0
-        else abs(repro_pooled - ref_pooled)
-    )
+    # P1-1: Use absolute difference on log scale for near-null effects
+    # to avoid denominator explosion when ref_pooled ≈ 0
+    abs_diff = abs(repro_pooled - ref_pooled)
+    if abs(ref_pooled) < 0.01:
+        # Near null: use absolute difference directly (log-scale units)
+        rel_diff = abs_diff
+    else:
+        rel_diff = abs_diff / abs(ref_pooled)
 
     # Classification logic (order matters — most severe checked first)
     if k_coverage < 0.30:

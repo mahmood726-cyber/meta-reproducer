@@ -2,6 +2,8 @@
 """Run MetaReproducer audit on all Pairwise70 reviews."""
 import sys
 import json
+import time
+import traceback
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -61,6 +63,8 @@ def main():
         print("AACT unavailable — using PDF pathway only")
 
     all_reports = []
+    t_start = time.time()
+    n_errors = 0
     for i, review in enumerate(reviews):
         for outcome in review["outcomes"]:
             infer_outcome_types(outcome)
@@ -75,10 +79,15 @@ def main():
                                        aact_lookup=aact_lookup)
             all_reports.append(report)
         except Exception as e:
-            print(f"  ERROR: {review['review_id']}: {e}")
+            # P0-6: Include exception type for actionable diagnosis
+            print(f"  ERROR: {review['review_id']}: {type(e).__name__}: {e}")
+            if "--verbose" in sys.argv:
+                traceback.print_exc()
+            n_errors += 1
             continue
 
-        if (i + 1) % 10 == 0:
+        # P1-8: Progress every 5 reviews instead of 10
+        if (i + 1) % 5 == 0:
             print(f"  [{i+1}/{len(reviews)}] Last: {review['review_id']}", flush=True)
 
     summary_path = RESULTS_DIR / "summary.json"
@@ -93,12 +102,16 @@ def main():
     reproduced = sum(1 for r in review_classified if r["review_level"]["classification"] == "reproduced")
     major = sum(1 for r in review_classified if r["review_level"]["classification"] == "major_discrepancy")
 
-    print(f"\n=== HEADLINE RESULTS ===")
-    print(f"Reviews processed: {len(all_reports)}")
-    print(f"Study-level: {study_matched}/{study_total} matched within 10%")
-    print(f"Review-level classified: {len(review_classified)}")
+    elapsed = time.time() - t_start
+    n_unclassified = len(all_reports) - len(review_classified)
+
+    print(f"\n=== HEADLINE RESULTS ({elapsed:.0f}s) ===")
+    print(f"Reviews processed: {len(all_reports)} ({n_errors} errors)")
+    print(f"Study-level: {study_matched}/{study_total} matched within 10% (moderate tier)")
+    print(f"Review-level classified: {len(review_classified)} ({n_unclassified} unclassifiable)")
     print(f"  Reproduced: {reproduced}")
     print(f"  Major discrepancy: {major}")
+    print(f"{'=' * 40}")
 
 
 if __name__ == "__main__":

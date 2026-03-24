@@ -48,22 +48,24 @@ def se_from_ci(
     ci_lower: float,
     ci_upper: float,
     is_ratio: bool,
+    conf_level: float = 0.95,
 ) -> Optional[float]:
-    """Back-calculate SE from a point estimate and 95 % confidence interval.
+    """Back-calculate SE from a point estimate and confidence interval.
 
     Parameters
     ----------
-    mean      : point estimate (natural scale)
-    ci_lower  : lower CI bound (natural scale)
-    ci_upper  : upper CI bound (natural scale)
-    is_ratio  : True for ratio measures (OR, RR, HR) — uses log scale
+    mean       : point estimate (natural scale)
+    ci_lower   : lower CI bound (natural scale)
+    ci_upper   : upper CI bound (natural scale)
+    is_ratio   : True for ratio measures (OR, RR, HR) — uses log scale
+    conf_level : confidence level (default 0.95)
 
     Returns
     -------
     float  — estimated SE (on log scale for ratios, natural scale for diffs)
     None   — when inputs are invalid (e.g. non-positive bounds for ratio)
     """
-    z = stats.norm.ppf(0.975)
+    z = stats.norm.ppf(1.0 - (1.0 - conf_level) / 2.0)
 
     if is_ratio:
         # Guard: ratio-scale CI bounds must be positive
@@ -270,7 +272,7 @@ def reproduce_outcome(
         extractions.append(extraction_result)
 
     # ----- (b2) AACT fallback for unmatched studies -----
-    n_aact_matched = 0
+    n_aact_only = 0  # P0-2: count only AACT matches for studies WITHOUT a PDF
     if aact_lookup is not None:
         for i, s in enumerate(studies):
             study_id = s.get("study_id", "")
@@ -282,11 +284,17 @@ def reproduce_outcome(
             if ext is not None and ext.get("matched", False):
                 continue
 
-            if pmid and pmid in aact_lookup and cochrane_mean is not None:
-                aact_data = aact_lookup[pmid]
+            # P1-10: Also check nct_id if available on the study
+            nct_id = s.get("nct_id")
+            aact_key = pmid if (pmid and pmid in aact_lookup) else None
+            if aact_key is None and nct_id and nct_id in aact_lookup:
+                aact_key = nct_id
+            if aact_key and cochrane_mean is not None:
+                aact_data = aact_lookup[aact_key]
                 if aact_data["effects"]:
                     match = ctgov_extractor.match_aact_effect(
-                        aact_data["effects"], cochrane_mean, is_ratio
+                        aact_data["effects"], cochrane_mean, is_ratio,
+                        effect_type=effect_type,
                     )
                     if match:
                         ext_entry = {
@@ -303,10 +311,12 @@ def reproduce_outcome(
                             extractions[i] = ext_entry
                         else:
                             extractions.append(ext_entry)
-                        n_aact_matched += 1
+                        # P0-2: Only count toward source if study had no PDF
+                        if s.get("pdf_path") is None:
+                            n_aact_only += 1
 
-    # Count studies with either PDF or AACT data as having a source
-    n_with_source = n_with_pdf + n_aact_matched
+    # P0-2: No double-counting — PDF studies + AACT-only studies
+    n_with_source = n_with_pdf + n_aact_only
 
     # ----- (c) Study-level assessment -----
     study_level = comparator.assess_study_level(
@@ -329,7 +339,8 @@ def reproduce_outcome(
         if extracted_effect is None:
             continue
 
-        # Use Cochrane SE as proxy for the reproduced SE
+        # P1-5: Known approximation — uses Cochrane-reported CI to derive SE,
+        # paired with extracted PE. Valid when extracted ≈ Cochrane (within 10%).
         ci_lo = s.get("ci_start")
         ci_hi = s.get("ci_end")
         mean_val = s.get("mean")
