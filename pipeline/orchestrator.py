@@ -282,10 +282,13 @@ def reproduce_outcome(
             cochrane_mean = s.get("mean")
             pmid = s.get("pmid")
 
-            # Skip if already matched via PDF
+            # Skip if already matched at moderate tier (5%/10%) via PDF.
+            # Weak-only matches (20%) are still eligible for AACT improvement.
             ext = extractions[i] if i < len(extractions) else None
             if ext is not None and ext.get("matched", False):
-                continue
+                tier = ext.get("match_tier", "")
+                if tier in MODERATE_TIERS:
+                    continue
 
             # P1-10: Also check nct_id and DOI if available on the study
             nct_id = s.get("nct_id")

@@ -136,7 +136,7 @@ def _load_doi_to_nct(
         citation = (row.get("citation") or "")
         for m in _DOI_RE.finditer(citation):
             # Clean trailing punctuation from DOI
-            doi_raw = m.group(0).rstrip(".,;)")
+            doi_raw = m.group(0).rstrip(".,;)]\"'>:")
             doi_lower = doi_raw.lower()
             if doi_lower in doi_set_lower:
                 if doi_lower not in candidates:
@@ -221,9 +221,19 @@ def _load_raw_arm_data(
             slot["events"] = val
         elif param_type == "MEAN" and val is not None:
             slot["mean"] = val
+            # P0-2: Only use dispersion as SD when dispersion_type confirms it
+            disp_type = (row.get("dispersion_type") or "").strip().lower()
             disp = _parse_float(row.get("dispersion_value_num", ""))
             if disp is not None:
-                slot["sd"] = disp
+                if disp_type in ("standard deviation", "sd", ""):
+                    # Empty dispersion_type defaults to SD (most common)
+                    slot["sd"] = disp
+                elif disp_type in ("standard error", "standard error of mean",
+                                   "standard error of the mean"):
+                    # Convert SE to SD: sd = se * sqrt(n)
+                    n = slot.get("total_n")
+                    if n is not None and n > 0:
+                        slot["sd"] = disp * math.sqrt(n)
         elif param_type == "NUMBER" and val is not None:
             # NUMBER can also represent event counts
             if slot["events"] is None:
@@ -272,122 +282,127 @@ def compute_effects_from_raw(
 
     for nct_id, outcomes in raw_data.items():
         for outcome_id, groups in outcomes.items():
-            # Need exactly 2 groups: OG000 (experimental) and OG001 (control)
-            if "OG000" not in groups or "OG001" not in groups:
+            # P0-3: Don't assume OG000=exp, OG001=ctrl. Use any two groups.
+            # CT.gov group codes are order-dependent, not role-dependent.
+            # We compute effects for both orderings; match_aact_effect's
+            # reciprocal matching (P1-3) handles direction resolution.
+            group_codes = sorted(groups.keys())
+            if len(group_codes) < 2:
                 continue
-
-            exp = groups["OG000"]
-            ctrl = groups["OG001"]
+            # Use first two groups (typically OG000 and OG001)
+            g1, g2 = groups[group_codes[0]], groups[group_codes[1]]
 
             # --- Binary outcome: both have events + total_n ---
-            if (
-                exp.get("events") is not None
-                and ctrl.get("events") is not None
-                and exp.get("total_n") is not None
-                and ctrl.get("total_n") is not None
-            ):
-                a = exp["events"]       # events in experimental
-                n_exp = exp["total_n"]
-                c = ctrl["events"]      # events in control
-                n_ctrl = ctrl["total_n"]
+            # P0-1: Use nested block (not continue) so continuous still runs
+            _binary_ok = (
+                g1.get("events") is not None
+                and g2.get("events") is not None
+                and g1.get("total_n") is not None
+                and g2.get("total_n") is not None
+            )
+            if _binary_ok:
+                a = g1["events"]
+                n_a = g1["total_n"]
+                c = g2["events"]
+                n_c_bin = g2["total_n"]
 
-                # Sanity checks
-                if n_exp <= 0 or n_ctrl <= 0:
-                    continue
-                if a < 0 or c < 0 or a > n_exp or c > n_ctrl:
-                    continue
+                # Sanity + P1-1: skip double-zero (Cochrane excludes these)
+                _valid = (
+                    n_a > 0 and n_c_bin > 0
+                    and a >= 0 and c >= 0
+                    and a <= n_a and c <= n_c_bin
+                    and not (a == 0 and c == 0)  # double-zero exclusion
+                )
+                if _valid:
+                    b = n_a - a
+                    d = n_c_bin - c
 
-                b = n_exp - a   # non-events experimental
-                d = n_ctrl - c  # non-events control
+                    cc = 0.5 if (a == 0 or b == 0 or c == 0 or d == 0) else 0.0
+                    a_c, b_c, c_c, d_c = a + cc, b + cc, c + cc, d + cc
+                    n_a_c = n_a + 2 * cc
+                    n_c_c = n_c_bin + 2 * cc
 
-                # Continuity correction: add 0.5 to all cells if any is 0
-                cc = 0.0
-                if a == 0 or b == 0 or c == 0 or d == 0:
-                    cc = 0.5
+                    # --- OR ---
+                    denom_or = b_c * c_c
+                    if denom_or > 0:
+                        or_val = (a_c * d_c) / denom_or
+                        if or_val > 0:
+                            log_or = math.log(or_val)
+                            se_sq = 1/a_c + 1/b_c + 1/c_c + 1/d_c
+                            if se_sq > 1e-10:  # P1-2: SE floor
+                                se = math.sqrt(se_sq)
+                                ci_lo = math.exp(log_or - _Z_ALPHA * se)
+                                ci_hi = math.exp(log_or + _Z_ALPHA * se)
+                                if nct_id not in results:
+                                    results[nct_id] = []
+                                results[nct_id].append({
+                                    "param_type": "Computed OR",
+                                    "point_estimate": round(or_val, 6),
+                                    "ci_lower": round(ci_lo, 6),
+                                    "ci_upper": round(ci_hi, 6),
+                                    "method": "raw_2x2",
+                                })
 
-                a_c, b_c, c_c, d_c = a + cc, b + cc, c + cc, d + cc
-                n_exp_c = n_exp + 2 * cc
-                n_ctrl_c = n_ctrl + 2 * cc
-
-                # --- OR ---
-                denom_or = b_c * c_c
-                if denom_or > 0:
-                    or_val = (a_c * d_c) / denom_or
-                    if or_val > 0:
-                        log_or = math.log(or_val)
-                        se_log_or_sq = 1/a_c + 1/b_c + 1/c_c + 1/d_c
-                        if se_log_or_sq >= 0:
-                            se_log_or = math.sqrt(se_log_or_sq)
-                            ci_lo = math.exp(log_or - _Z_ALPHA * se_log_or)
-                            ci_hi = math.exp(log_or + _Z_ALPHA * se_log_or)
-                            if nct_id not in results:
-                                results[nct_id] = []
-                            results[nct_id].append({
-                                "param_type": "Computed OR",
-                                "point_estimate": round(or_val, 6),
-                                "ci_lower": round(ci_lo, 6),
-                                "ci_upper": round(ci_hi, 6),
-                                "method": "raw_2x2",
-                            })
-
-                # --- RR ---
-                p_exp = a_c / n_exp_c
-                p_ctrl = c_c / n_ctrl_c
-                if p_ctrl > 0:
-                    rr_val = p_exp / p_ctrl
-                    if rr_val > 0 and a_c > 0 and c_c > 0:
-                        log_rr = math.log(rr_val)
-                        se_log_rr_sq = (
-                            1/a_c - 1/n_exp_c + 1/c_c - 1/n_ctrl_c
-                        )
-                        if se_log_rr_sq >= 0:
-                            se_log_rr = math.sqrt(se_log_rr_sq)
-                            ci_lo = math.exp(log_rr - _Z_ALPHA * se_log_rr)
-                            ci_hi = math.exp(log_rr + _Z_ALPHA * se_log_rr)
-                            if nct_id not in results:
-                                results[nct_id] = []
-                            results[nct_id].append({
-                                "param_type": "Computed RR",
-                                "point_estimate": round(rr_val, 6),
-                                "ci_lower": round(ci_lo, 6),
-                                "ci_upper": round(ci_hi, 6),
-                                "method": "raw_2x2",
-                            })
+                    # --- RR ---
+                    p_a = a_c / n_a_c
+                    p_c = c_c / n_c_c
+                    if p_c > 0:
+                        rr_val = p_a / p_c
+                        if rr_val > 0 and a_c > 0 and c_c > 0:
+                            log_rr = math.log(rr_val)
+                            se_sq = 1/a_c - 1/n_a_c + 1/c_c - 1/n_c_c
+                            if se_sq > 1e-10:  # P1-2: SE floor
+                                se = math.sqrt(se_sq)
+                                ci_lo = math.exp(log_rr - _Z_ALPHA * se)
+                                ci_hi = math.exp(log_rr + _Z_ALPHA * se)
+                                if nct_id not in results:
+                                    results[nct_id] = []
+                                results[nct_id].append({
+                                    "param_type": "Computed RR",
+                                    "point_estimate": round(rr_val, 6),
+                                    "ci_lower": round(ci_lo, 6),
+                                    "ci_upper": round(ci_hi, 6),
+                                    "method": "raw_2x2",
+                                })
 
             # --- Continuous outcome: both have mean + sd + total_n ---
-            if (
-                exp.get("mean") is not None
-                and ctrl.get("mean") is not None
-                and exp.get("sd") is not None
-                and ctrl.get("sd") is not None
-                and exp.get("total_n") is not None
-                and ctrl.get("total_n") is not None
-            ):
-                mean_exp = exp["mean"]
-                mean_ctrl = ctrl["mean"]
-                sd_exp = exp["sd"]
-                sd_ctrl = ctrl["sd"]
-                n_e = exp["total_n"]
-                n_c = ctrl["total_n"]
+            # P0-1: Independent of binary block (no continue above)
+            _cont_ok = (
+                g1.get("mean") is not None
+                and g2.get("mean") is not None
+                and g1.get("sd") is not None
+                and g2.get("sd") is not None
+                and g1.get("total_n") is not None
+                and g2.get("total_n") is not None
+            )
+            if _cont_ok:
+                mean_1 = g1["mean"]
+                mean_2 = g2["mean"]
+                sd_1 = g1["sd"]
+                sd_2 = g2["sd"]
+                n_1 = g1["total_n"]
+                n_2 = g2["total_n"]
 
-                if n_e <= 0 or n_c <= 0 or sd_exp < 0 or sd_ctrl < 0:
-                    continue
-
-                md = mean_exp - mean_ctrl
-                var_sum = (sd_exp ** 2) / n_e + (sd_ctrl ** 2) / n_c
-                if var_sum >= 0:
-                    se_md = math.sqrt(var_sum)
-                    ci_lo = md - _Z_ALPHA * se_md
-                    ci_hi = md + _Z_ALPHA * se_md
-                    if nct_id not in results:
-                        results[nct_id] = []
-                    results[nct_id].append({
-                        "param_type": "Computed MD",
-                        "point_estimate": round(md, 6),
-                        "ci_lower": round(ci_lo, 6),
-                        "ci_upper": round(ci_hi, 6),
-                        "method": "raw_means",
-                    })
+                if n_1 > 0 and n_2 > 0 and sd_1 >= 0 and sd_2 >= 0:
+                    # P2-5: Skip when both SDs are exactly 0
+                    if sd_1 == 0 and sd_2 == 0:
+                        pass
+                    else:
+                        md = mean_1 - mean_2
+                        var_sum = (sd_1 ** 2) / n_1 + (sd_2 ** 2) / n_2
+                        if var_sum > 0:
+                            se_md = math.sqrt(var_sum)
+                            ci_lo = md - _Z_ALPHA * se_md
+                            ci_hi = md + _Z_ALPHA * se_md
+                            if nct_id not in results:
+                                results[nct_id] = []
+                            results[nct_id].append({
+                                "param_type": "Computed MD",
+                                "point_estimate": round(md, 6),
+                                "ci_lower": round(ci_lo, 6),
+                                "ci_upper": round(ci_hi, 6),
+                                "method": "raw_means",
+                            })
 
     return results
 
@@ -431,8 +446,6 @@ def build_aact_lookup_local(
         # Step 1b: DOI → NCT mapping (for studies without PMIDs)
         doi_to_nct: dict[str, str] = {}
         if doi_set:
-            # Exclude DOIs that already resolved via PMID
-            already_mapped_ncts = set(pmid_to_nct.values())
             doi_to_nct = _load_doi_to_nct(zf, doi_set)
             nct_set |= set(doi_to_nct.values())
             print(f"  DOI->NCT: {len(doi_to_nct)} mapped")
@@ -676,7 +689,9 @@ def match_aact_effect(
     for eff in aact_effects:
         if eff.get("point_estimate") is None:
             continue
-        aact_type = PARAM_TYPE_MAP.get(eff.get("param_type", ""), "")
+        # P1-7: Case-insensitive lookup for robustness
+        raw_pt = eff.get("param_type", "")
+        aact_type = PARAM_TYPE_MAP.get(raw_pt, "") or PARAM_TYPE_MAP.get(raw_pt.title(), "")
         if effect_type and aact_type and aact_type != effect_type:
             continue  # Skip type-mismatched effects
         compatible.append(eff)
