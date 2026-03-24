@@ -48,9 +48,45 @@ def build_study_pdf_map() -> dict:
     return mapping
 
 
-def link_reviews(reviews: list[dict], pdf_map: dict) -> None:
-    """Mutate reviews in-place: set pdf_path on matching studies."""
+def build_study_pmid_map() -> dict:
+    """Build mapping: (first_author, year) -> pmid from mega_matched.jsonl.
+
+    Returns {(author_str, year_int): pmid_str} for all entries with a PMID.
+    """
+    matched_path = MEGA_DIR / "mega_matched.jsonl"
+    if not matched_path.exists():
+        print(f"WARNING: {matched_path} not found")
+        return {}
+
+    mapping = {}
+    with open(matched_path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            entry = json.loads(line)
+            pmid = entry.get("pmid")
+            if not pmid:
+                continue
+            author = entry.get("first_author", "")
+            year = entry.get("year")
+            key = (author.strip(), year)
+            mapping[key] = str(pmid)
+    return mapping
+
+
+def link_reviews(reviews: list[dict], pdf_map: dict,
+                  pmid_map: dict | None = None) -> None:
+    """Mutate reviews in-place: set pdf_path and pmid on matching studies.
+
+    Parameters
+    ----------
+    reviews  : list of review dicts (each with outcomes -> studies)
+    pdf_map  : {(author, year): pdf_path}
+    pmid_map : {(author, year): pmid} — optional; built by build_study_pmid_map()
+    """
     linked = 0
+    pmid_linked = 0
     total = 0
     for review in reviews:
         for outcome in review["outcomes"]:
@@ -62,7 +98,12 @@ def link_reviews(reviews: list[dict], pdf_map: dict) -> None:
                 if key in pdf_map:
                     study["pdf_path"] = pdf_map[key]
                     linked += 1
+                if pmid_map and key in pmid_map:
+                    study["pmid"] = pmid_map[key]
+                    pmid_linked += 1
     print(f"Linked {linked}/{total} studies to PDFs ({100*linked/max(total,1):.1f}%)")
+    if pmid_map is not None:
+        print(f"Linked {pmid_linked}/{total} studies to PMIDs ({100*pmid_linked/max(total,1):.1f}%)")
 
 
 if __name__ == "__main__":

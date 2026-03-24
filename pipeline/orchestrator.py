@@ -6,9 +6,9 @@ reproduce-one-outcome workflow.
 
 Public API
 ----------
-se_from_ci(mean, ci_lower, ci_upper, is_ratio)  -> float | None
-select_primary_outcome(outcomes)                 -> dict
-reproduce_outcome(review_id, outcome)            -> dict
+se_from_ci(mean, ci_lower, ci_upper, is_ratio)           -> float | None
+select_primary_outcome(outcomes)                          -> dict
+reproduce_outcome(review_id, outcome, aact_lookup=None)   -> dict
 
 Internal
 --------
@@ -23,6 +23,7 @@ from typing import Optional
 from scipy import stats
 
 from pipeline import meta_engine, comparator, taxonomy, truthcert, effect_extractor
+from pipeline import ctgov_extractor
 
 
 # ---------------------------------------------------------------------------
@@ -129,13 +130,18 @@ def _is_ratio_type(effect_type: str) -> bool:
 # reproduce_outcome
 # ---------------------------------------------------------------------------
 
-def reproduce_outcome(review_id: str, outcome: dict) -> dict:
+def reproduce_outcome(
+    review_id: str,
+    outcome: dict,
+    aact_lookup: Optional[dict] = None,
+) -> dict:
     """Run the full reproducibility pipeline for one outcome.
 
     Steps
     -----
     a. Reference pooled — back-calculate yi/SE from Cochrane studies, pool DL.
     b. Extract effects — run extraction on studies with PDFs.
+    b2. AACT fallback — for unmatched studies, try CT.gov structured results.
     c. Study-level assessment — classify match rates.
     d. Reproduced pooled — pool matched extractions, compare.
     e. Error taxonomy — classify and aggregate study errors.
@@ -143,9 +149,11 @@ def reproduce_outcome(review_id: str, outcome: dict) -> dict:
 
     Parameters
     ----------
-    review_id : Cochrane review ID (e.g. "CD001234")
-    outcome   : outcome dict with keys: outcome_label, studies,
-                data_type, inferred_effect_type, k
+    review_id    : Cochrane review ID (e.g. "CD001234")
+    outcome      : outcome dict with keys: outcome_label, studies,
+                   data_type, inferred_effect_type, k
+    aact_lookup  : optional dict from build_aact_lookup(); maps PMID to
+                   {nct_id, effects, raw}
 
     Returns
     -------
@@ -261,11 +269,50 @@ def reproduce_outcome(review_id: str, outcome: dict) -> dict:
 
         extractions.append(extraction_result)
 
+    # ----- (b2) AACT fallback for unmatched studies -----
+    n_aact_matched = 0
+    if aact_lookup is not None:
+        for i, s in enumerate(studies):
+            study_id = s.get("study_id", "")
+            cochrane_mean = s.get("mean")
+            pmid = s.get("pmid")
+
+            # Skip if already matched via PDF
+            ext = extractions[i] if i < len(extractions) else None
+            if ext is not None and ext.get("matched", False):
+                continue
+
+            if pmid and pmid in aact_lookup and cochrane_mean is not None:
+                aact_data = aact_lookup[pmid]
+                if aact_data["effects"]:
+                    match = ctgov_extractor.match_aact_effect(
+                        aact_data["effects"], cochrane_mean, is_ratio
+                    )
+                    if match:
+                        ext_entry = {
+                            "study_id": study_id,
+                            "matched": True,
+                            "match_tier": match["match_tier"],
+                            "extracted_effect": match["point_estimate"],
+                            "cochrane_giv_mean": cochrane_mean,
+                            "pct_difference": match["pct_difference"],
+                            "source": "aact",
+                        }
+                        # Replace existing failed extraction or append
+                        if i < len(extractions):
+                            extractions[i] = ext_entry
+                        else:
+                            extractions.append(ext_entry)
+                        n_aact_matched += 1
+
+    # Count studies with either PDF or AACT data as having a source
+    n_with_source = n_with_pdf + n_aact_matched
+
     # ----- (c) Study-level assessment -----
     study_level = comparator.assess_study_level(
         total_k=total_k,
         extractions=[e for e in extractions if e is not None],
-        n_with_pdf=n_with_pdf,
+        n_with_pdf=n_with_source if aact_lookup is not None else n_with_pdf,
     )
 
     # ----- (d) Reproduced pooled from matched extractions -----

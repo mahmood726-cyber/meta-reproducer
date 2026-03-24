@@ -19,8 +19,12 @@ from scipy import stats
 # ---------------------------------------------------------------------------
 # Tier definitions
 # ---------------------------------------------------------------------------
-STRICT_TIERS: set[str] = {"direct_5pct", "computed_5pct"}
-MODERATE_TIERS: set[str] = {"direct_5pct", "direct_10pct", "computed_5pct", "computed_10pct"}
+STRICT_TIERS: set[str] = {"direct_5pct", "computed_5pct", "aact_5pct"}
+MODERATE_TIERS: set[str] = {
+    "direct_5pct", "direct_10pct",
+    "computed_5pct", "computed_10pct",
+    "aact_5pct", "aact_10pct",
+}
 
 
 # ---------------------------------------------------------------------------

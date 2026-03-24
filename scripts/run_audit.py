@@ -12,7 +12,7 @@ from pipeline.orchestrator import reproduce_outcome, select_primary_outcome
 
 # Also import the linking module
 sys.path.insert(0, str(Path(__file__).parent))
-from link_mega_data import build_study_pdf_map, link_reviews
+from link_mega_data import build_study_pdf_map, build_study_pmid_map, link_reviews
 
 RDA_DIR = Path(r"C:\Users\user\OneDrive - NHS\Documents\Pairwise70\data")
 RESULTS_DIR = Path(__file__).parent.parent / "data" / "results"
@@ -25,10 +25,32 @@ def main():
     reviews = load_all_rdas(RDA_DIR)
     print(f"Loaded {len(reviews)} reviews")
 
-    # Link studies to existing PDFs from mega gold standard
-    print("Linking studies to PDFs...")
+    # Link studies to existing PDFs and PMIDs from mega gold standard
+    print("Linking studies to PDFs and PMIDs...")
     pdf_map = build_study_pdf_map()
-    link_reviews(reviews, pdf_map)
+    pmid_map = build_study_pmid_map()
+    link_reviews(reviews, pdf_map, pmid_map)
+
+    # Initialize AACT CT.gov lookup (second extraction pathway)
+    from pipeline.ctgov_extractor import get_connection, build_aact_lookup
+    aact_lookup = None
+    conn = get_connection()
+    if conn:
+        # Collect all PMIDs from linked studies
+        all_pmids = []
+        for review in reviews:
+            for outcome in review["outcomes"]:
+                for study in outcome["studies"]:
+                    pmid = study.get("pmid")
+                    if pmid:
+                        all_pmids.append(str(pmid))
+        all_pmids = list(set(all_pmids))
+        print(f"Looking up {len(all_pmids)} PMIDs in AACT...")
+        aact_lookup = build_aact_lookup(conn, all_pmids)
+        print(f"AACT lookup: {len(aact_lookup)} studies with CT.gov data")
+        conn.close()
+    else:
+        print("AACT connection unavailable — using PDF pathway only")
 
     all_reports = []
     for i, review in enumerate(reviews):
@@ -41,7 +63,8 @@ def main():
         primary = select_primary_outcome(review["outcomes"])
 
         try:
-            report = reproduce_outcome(review["review_id"], primary)
+            report = reproduce_outcome(review["review_id"], primary,
+                                       aact_lookup=aact_lookup)
             all_reports.append(report)
         except Exception as e:
             print(f"  ERROR: {review['review_id']}: {e}")
