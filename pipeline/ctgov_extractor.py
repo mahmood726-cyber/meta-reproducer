@@ -1,11 +1,13 @@
 """
-AACT Database Integration — pipeline/ctgov_extractor.py
+AACT CT.gov Integration — pipeline/ctgov_extractor.py
 
-Connects to ClinicalTrials.gov structured results via the AACT PostgreSQL
-database to provide a second extraction pathway for the MetaReproducer pipeline.
+Two data sources (tried in order):
+1. Local AACT ZIP export (pipe-delimited text files) — fast, no network
+2. Remote AACT PostgreSQL — fallback if ZIP unavailable
 
 Public API
 ----------
+build_aact_lookup_local(zip_path, pmids)   -> {pmid: {nct_id, effects, raw}}
 get_connection()                           -> connection | None
 batch_pmid_to_nct(conn, pmids)             -> {pmid: nct_id}
 fetch_precomputed_effects(conn, nct_ids)   -> {nct_id: [effect_dict]}
@@ -15,24 +17,143 @@ build_aact_lookup(conn, pmids)             -> {pmid: {nct_id, effects, raw}}
 
 Notes
 -----
-- Credentials loaded from dotenv (AACT_USER, AACT_PASSWORD).
-- All functions handle missing/None inputs gracefully.
+- Local ZIP is preferred — no credentials needed, ~10x faster.
 - match_aact_effect reuses classify_match from effect_extractor for consistency.
 """
 
 from __future__ import annotations
 
+import csv
+import io
 import os
+import zipfile
 from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
 
-# Load AACT credentials — try project-local .env first, then legacy path
+# Load AACT credentials for remote fallback
 _project_root = Path(__file__).resolve().parent.parent
 load_dotenv(_project_root / ".env")
 load_dotenv(Path(r"C:\Users\user\Downloads\Metaprojects\ctgov-search-strategies\.env"))
 
+# Default local AACT export path
+AACT_ZIP_PATH = Path(
+    r"C:\Users\user\Pairwise70\hfpef_registry_calibration\data\aact"
+    r"\20260219_export_ctgov.zip"
+)
+
+
+# ---------------------------------------------------------------------------
+# Local ZIP-based lookup (preferred — no network)
+# ---------------------------------------------------------------------------
+
+def _parse_float(val: str) -> Optional[float]:
+    """Parse a pipe-delimited float, returning None for empty/invalid."""
+    val = val.strip()
+    if not val:
+        return None
+    try:
+        return float(val)
+    except ValueError:
+        return None
+
+
+def _read_zip_csv(zf: zipfile.ZipFile, filename: str):
+    """Yield dicts from a pipe-delimited AACT text file inside the ZIP."""
+    with zf.open(filename) as raw:
+        reader = csv.DictReader(
+            io.TextIOWrapper(raw, encoding="utf-8", errors="replace"),
+            delimiter="|",
+        )
+        yield from reader
+
+
+def _load_pmid_to_nct(zf: zipfile.ZipFile, pmid_set: set[str]) -> dict[str, str]:
+    """Stream study_references.txt, return {pmid: nct_id} for target PMIDs."""
+    mapping: dict[str, str] = {}
+    for row in _read_zip_csv(zf, "study_references.txt"):
+        pmid = (row.get("pmid") or "").strip()
+        nct = (row.get("nct_id") or "").strip()
+        if pmid in pmid_set and nct:
+            mapping[pmid] = nct
+    return mapping
+
+
+def _load_precomputed_effects(
+    zf: zipfile.ZipFile, nct_set: set[str]
+) -> dict[str, list[dict]]:
+    """Stream outcome_analyses.txt, return {nct_id: [effect_dict]}."""
+    results: dict[str, list[dict]] = {}
+    for row in _read_zip_csv(zf, "outcome_analyses.txt"):
+        nct = (row.get("nct_id") or "").strip()
+        if nct not in nct_set:
+            continue
+        pe = _parse_float(row.get("param_value", ""))
+        if pe is None:
+            continue
+        if nct not in results:
+            results[nct] = []
+        results[nct].append({
+            "param_type": (row.get("param_type") or "").strip(),
+            "point_estimate": pe,
+            "ci_lower": _parse_float(row.get("ci_lower_limit", "")),
+            "ci_upper": _parse_float(row.get("ci_upper_limit", "")),
+            "method": (row.get("method") or "").strip(),
+        })
+    return results
+
+
+def build_aact_lookup_local(
+    zip_path: str | Path | None = None,
+    pmids: list[str] | None = None,
+) -> dict:
+    """Build AACT lookup from local ZIP export (no network needed).
+
+    Parameters
+    ----------
+    zip_path : path to AACT ZIP export; defaults to AACT_ZIP_PATH
+    pmids    : list of PMID strings to look up
+
+    Returns
+    -------
+    {pmid: {"nct_id": str, "effects": [...]}} or empty dict on failure
+    """
+    zip_path = Path(zip_path) if zip_path else AACT_ZIP_PATH
+    if not zip_path.exists():
+        print(f"AACT ZIP not found: {zip_path}")
+        return {}
+    if not pmids:
+        return {}
+
+    pmid_set = set(str(p) for p in pmids)
+    print(f"Loading AACT from local ZIP ({zip_path.name})...")
+
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        # Step 1: PMID → NCT mapping
+        pmid_to_nct = _load_pmid_to_nct(zf, pmid_set)
+        nct_set = set(pmid_to_nct.values())
+        print(f"  PMID->NCT: {len(pmid_to_nct)} mapped ({len(nct_set)} unique NCTs)")
+
+        # Step 2: Pre-computed effects for those NCTs
+        effects = _load_precomputed_effects(zf, nct_set)
+        n_with_effects = sum(1 for v in effects.values() if v)
+        print(f"  NCTs with pre-computed effects: {n_with_effects}")
+
+    # Assemble lookup
+    lookup: dict[str, dict] = {}
+    for pmid, nct_id in pmid_to_nct.items():
+        lookup[pmid] = {
+            "nct_id": nct_id,
+            "effects": effects.get(nct_id, []),
+            "raw": [],  # skip raw outcomes for now — pre-computed is sufficient
+        }
+    return lookup
+
+
+# ---------------------------------------------------------------------------
+# Remote AACT PostgreSQL (fallback)
+# ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
 # Connection

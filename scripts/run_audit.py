@@ -32,25 +32,33 @@ def main():
     link_reviews(reviews, pdf_map, pmid_map)
 
     # Initialize AACT CT.gov lookup (second extraction pathway)
-    from pipeline.ctgov_extractor import get_connection, build_aact_lookup
-    aact_lookup = None
-    conn = get_connection()
-    if conn:
-        # Collect all PMIDs from linked studies
-        all_pmids = []
-        for review in reviews:
-            for outcome in review["outcomes"]:
-                for study in outcome["studies"]:
-                    pmid = study.get("pmid")
-                    if pmid:
-                        all_pmids.append(str(pmid))
-        all_pmids = list(set(all_pmids))
-        print(f"Looking up {len(all_pmids)} PMIDs in AACT...")
-        aact_lookup = build_aact_lookup(conn, all_pmids)
+    # Prefer local ZIP (fast, no network) → fall back to remote PostgreSQL
+    from pipeline.ctgov_extractor import (
+        build_aact_lookup_local, get_connection, build_aact_lookup,
+    )
+    # Collect all PMIDs from linked studies
+    all_pmids = []
+    for review in reviews:
+        for outcome in review["outcomes"]:
+            for study in outcome["studies"]:
+                pmid = study.get("pmid")
+                if pmid:
+                    all_pmids.append(str(pmid))
+    all_pmids = list(set(all_pmids))
+    print(f"Looking up {len(all_pmids)} PMIDs in AACT...")
+
+    # Try local ZIP first
+    aact_lookup = build_aact_lookup_local(pmids=all_pmids)
+    if not aact_lookup:
+        # Fall back to remote
+        conn = get_connection()
+        if conn:
+            aact_lookup = build_aact_lookup(conn, all_pmids)
+            conn.close()
+    if aact_lookup:
         print(f"AACT lookup: {len(aact_lookup)} studies with CT.gov data")
-        conn.close()
     else:
-        print("AACT connection unavailable — using PDF pathway only")
+        print("AACT unavailable — using PDF pathway only")
 
     all_reports = []
     for i, review in enumerate(reviews):
