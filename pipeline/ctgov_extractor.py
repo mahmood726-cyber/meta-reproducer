@@ -225,9 +225,12 @@ def _load_raw_arm_data(
             disp_type = (row.get("dispersion_type") or "").strip().lower()
             disp = _parse_float(row.get("dispersion_value_num", ""))
             if disp is not None:
-                if disp_type in ("standard deviation", "sd", ""):
-                    # Empty dispersion_type defaults to SD (most common)
+                if disp_type in ("standard deviation", "sd"):
                     slot["sd"] = disp
+                elif disp_type == "":
+                    # P0-1 (R3): Empty dispersion_type is ambiguous —
+                    # could be SE, IQR, or range. Skip rather than assume SD.
+                    pass
                 elif disp_type in ("standard error", "standard error of mean",
                                    "standard error of the mean"):
                     # Convert SE to SD: sd = se * sqrt(n)
