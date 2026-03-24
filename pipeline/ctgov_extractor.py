@@ -25,12 +25,14 @@ from __future__ import annotations
 
 import csv
 import io
+import math
 import os
 import zipfile
 from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
+from scipy.stats import norm as _norm
 
 # Load AACT credentials for remote fallback (P1-7: single .env location)
 _project_root = Path(__file__).resolve().parent.parent
@@ -125,6 +127,223 @@ def _load_precomputed_effects(
     return results
 
 
+def _load_raw_arm_data(
+    zf: zipfile.ZipFile, nct_set: set[str]
+) -> dict[str, dict[str, dict[str, dict]]]:
+    """Stream outcome_measurements.txt and outcome_counts.txt from ZIP.
+
+    Returns nested dict:
+        {nct_id: {outcome_id: {group_code: {events, total_n, mean, sd}}}}
+
+    Only keeps data for NCTs in *nct_set* (memory-efficient).
+    """
+    # Structure: raw[nct][outcome_id][group_code] = {events, total_n, mean, sd}
+    raw: dict[str, dict[str, dict[str, dict]]] = {}
+
+    def _ensure_slot(nct: str, oid: str, gc: str) -> dict:
+        if nct not in raw:
+            raw[nct] = {}
+        if oid not in raw[nct]:
+            raw[nct][oid] = {}
+        if gc not in raw[nct][oid]:
+            raw[nct][oid][gc] = {
+                "events": None,
+                "total_n": None,
+                "mean": None,
+                "sd": None,
+            }
+        return raw[nct][oid][gc]
+
+    # --- outcome_measurements.txt: events, means, SDs ---
+    for row in _read_zip_csv(zf, "outcome_measurements.txt"):
+        nct = (row.get("nct_id") or "").strip()
+        if nct not in nct_set:
+            continue
+        oid = (row.get("outcome_id") or "").strip()
+        gc = (row.get("ctgov_group_code") or "").strip()
+        if not oid or not gc:
+            continue
+
+        param_type = (row.get("param_type") or "").strip().upper()
+        val = _parse_float(row.get("param_value_num", ""))
+
+        slot = _ensure_slot(nct, oid, gc)
+
+        if param_type == "COUNT_OF_PARTICIPANTS" and val is not None:
+            slot["events"] = val
+        elif param_type == "MEAN" and val is not None:
+            slot["mean"] = val
+            disp = _parse_float(row.get("dispersion_value_num", ""))
+            if disp is not None:
+                slot["sd"] = disp
+        elif param_type == "NUMBER" and val is not None:
+            # NUMBER can also represent event counts
+            if slot["events"] is None:
+                slot["events"] = val
+
+    # --- outcome_counts.txt: total N per arm ---
+    for row in _read_zip_csv(zf, "outcome_counts.txt"):
+        nct = (row.get("nct_id") or "").strip()
+        if nct not in nct_set:
+            continue
+        scope = (row.get("scope") or "").strip()
+        units = (row.get("units") or "").strip()
+        if scope != "Measure" or units != "Participants":
+            continue
+        oid = (row.get("outcome_id") or "").strip()
+        gc = (row.get("ctgov_group_code") or "").strip()
+        count = _parse_float(row.get("count", ""))
+        if not oid or not gc or count is None:
+            continue
+
+        slot = _ensure_slot(nct, oid, gc)
+        slot["total_n"] = count
+
+    return raw
+
+
+# Critical value for 95% CI (two-sided)
+_Z_ALPHA = _norm.ppf(0.975)
+
+
+def compute_effects_from_raw(
+    raw_data: dict[str, dict[str, dict[str, dict]]],
+) -> dict[str, list[dict]]:
+    """Compute OR, RR, and MD from raw arm-level data.
+
+    Parameters
+    ----------
+    raw_data : nested dict from _load_raw_arm_data
+
+    Returns
+    -------
+    {nct_id: [{param_type, point_estimate, ci_lower, ci_upper, method}]}
+    Same format as pre-computed effects for seamless merging.
+    """
+    results: dict[str, list[dict]] = {}
+
+    for nct_id, outcomes in raw_data.items():
+        for outcome_id, groups in outcomes.items():
+            # Need exactly 2 groups: OG000 (experimental) and OG001 (control)
+            if "OG000" not in groups or "OG001" not in groups:
+                continue
+
+            exp = groups["OG000"]
+            ctrl = groups["OG001"]
+
+            # --- Binary outcome: both have events + total_n ---
+            if (
+                exp.get("events") is not None
+                and ctrl.get("events") is not None
+                and exp.get("total_n") is not None
+                and ctrl.get("total_n") is not None
+            ):
+                a = exp["events"]       # events in experimental
+                n_exp = exp["total_n"]
+                c = ctrl["events"]      # events in control
+                n_ctrl = ctrl["total_n"]
+
+                # Sanity checks
+                if n_exp <= 0 or n_ctrl <= 0:
+                    continue
+                if a < 0 or c < 0 or a > n_exp or c > n_ctrl:
+                    continue
+
+                b = n_exp - a   # non-events experimental
+                d = n_ctrl - c  # non-events control
+
+                # Continuity correction: add 0.5 to all cells if any is 0
+                cc = 0.0
+                if a == 0 or b == 0 or c == 0 or d == 0:
+                    cc = 0.5
+
+                a_c, b_c, c_c, d_c = a + cc, b + cc, c + cc, d + cc
+                n_exp_c = n_exp + 2 * cc
+                n_ctrl_c = n_ctrl + 2 * cc
+
+                # --- OR ---
+                denom_or = b_c * c_c
+                if denom_or > 0:
+                    or_val = (a_c * d_c) / denom_or
+                    if or_val > 0:
+                        log_or = math.log(or_val)
+                        se_log_or_sq = 1/a_c + 1/b_c + 1/c_c + 1/d_c
+                        if se_log_or_sq >= 0:
+                            se_log_or = math.sqrt(se_log_or_sq)
+                            ci_lo = math.exp(log_or - _Z_ALPHA * se_log_or)
+                            ci_hi = math.exp(log_or + _Z_ALPHA * se_log_or)
+                            if nct_id not in results:
+                                results[nct_id] = []
+                            results[nct_id].append({
+                                "param_type": "Computed OR",
+                                "point_estimate": round(or_val, 6),
+                                "ci_lower": round(ci_lo, 6),
+                                "ci_upper": round(ci_hi, 6),
+                                "method": "raw_2x2",
+                            })
+
+                # --- RR ---
+                p_exp = a_c / n_exp_c
+                p_ctrl = c_c / n_ctrl_c
+                if p_ctrl > 0:
+                    rr_val = p_exp / p_ctrl
+                    if rr_val > 0 and a_c > 0 and c_c > 0:
+                        log_rr = math.log(rr_val)
+                        se_log_rr_sq = (
+                            1/a_c - 1/n_exp_c + 1/c_c - 1/n_ctrl_c
+                        )
+                        if se_log_rr_sq >= 0:
+                            se_log_rr = math.sqrt(se_log_rr_sq)
+                            ci_lo = math.exp(log_rr - _Z_ALPHA * se_log_rr)
+                            ci_hi = math.exp(log_rr + _Z_ALPHA * se_log_rr)
+                            if nct_id not in results:
+                                results[nct_id] = []
+                            results[nct_id].append({
+                                "param_type": "Computed RR",
+                                "point_estimate": round(rr_val, 6),
+                                "ci_lower": round(ci_lo, 6),
+                                "ci_upper": round(ci_hi, 6),
+                                "method": "raw_2x2",
+                            })
+
+            # --- Continuous outcome: both have mean + sd + total_n ---
+            if (
+                exp.get("mean") is not None
+                and ctrl.get("mean") is not None
+                and exp.get("sd") is not None
+                and ctrl.get("sd") is not None
+                and exp.get("total_n") is not None
+                and ctrl.get("total_n") is not None
+            ):
+                mean_exp = exp["mean"]
+                mean_ctrl = ctrl["mean"]
+                sd_exp = exp["sd"]
+                sd_ctrl = ctrl["sd"]
+                n_e = exp["total_n"]
+                n_c = ctrl["total_n"]
+
+                if n_e <= 0 or n_c <= 0 or sd_exp < 0 or sd_ctrl < 0:
+                    continue
+
+                md = mean_exp - mean_ctrl
+                var_sum = (sd_exp ** 2) / n_e + (sd_ctrl ** 2) / n_c
+                if var_sum >= 0:
+                    se_md = math.sqrt(var_sum)
+                    ci_lo = md - _Z_ALPHA * se_md
+                    ci_hi = md + _Z_ALPHA * se_md
+                    if nct_id not in results:
+                        results[nct_id] = []
+                    results[nct_id].append({
+                        "param_type": "Computed MD",
+                        "point_estimate": round(md, 6),
+                        "ci_lower": round(ci_lo, 6),
+                        "ci_upper": round(ci_hi, 6),
+                        "method": "raw_means",
+                    })
+
+    return results
+
+
 def build_aact_lookup_local(
     zip_path: str | Path | None = None,
     pmids: list[str] | None = None,
@@ -161,13 +380,27 @@ def build_aact_lookup_local(
         n_with_effects = sum(1 for v in effects.values() if v)
         print(f"  NCTs with pre-computed effects: {n_with_effects}")
 
+        # Step 3: Raw arm data → compute OR/RR/MD for NCTs lacking effects
+        raw_arm = _load_raw_arm_data(zf, nct_set)
+        computed = compute_effects_from_raw(raw_arm)
+        n_with_computed = sum(1 for v in computed.values() if v)
+        print(f"  NCTs with computed effects: {n_with_computed}")
+
+    # Merge: pre-computed effects first, computed effects appended
+    merged_effects: dict[str, list[dict]] = {}
+    all_ncts = set(effects.keys()) | set(computed.keys())
+    for nct_id in all_ncts:
+        merged = list(effects.get(nct_id, []))
+        merged.extend(computed.get(nct_id, []))
+        merged_effects[nct_id] = merged
+
     # Assemble lookup
     lookup: dict[str, dict] = {}
     for pmid, nct_id in pmid_to_nct.items():
         lookup[pmid] = {
             "nct_id": nct_id,
-            "effects": effects.get(nct_id, []),
-            "raw": [],  # skip raw outcomes for now — pre-computed is sufficient
+            "effects": merged_effects.get(nct_id, []),
+            "raw": [],
         }
     return lookup
 
@@ -335,6 +568,10 @@ PARAM_TYPE_MAP: dict[str, str] = {
     "LS Mean Difference": "MD",
     "LS mean difference": "MD",
     "Least Squares Mean Difference": "MD",
+    # Computed from raw arm-level data
+    "Computed OR": "OR",
+    "Computed RR": "RR",
+    "Computed MD": "MD",
 }
 
 
