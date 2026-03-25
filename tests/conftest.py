@@ -1,3 +1,7 @@
+import platform
+# Python 3.13 + Windows WMI deadlock fix — must come before any scipy/numpy import
+platform._wmi_query = lambda *a, **k: ('10.0.26100', 1, 'Multiprocessor Free', 0, 0)
+
 import pytest
 import math
 

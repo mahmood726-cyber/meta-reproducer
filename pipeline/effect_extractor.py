@@ -32,9 +32,9 @@ from typing import Any, Dict, List, Optional, Tuple
 # Constants
 # ---------------------------------------------------------------------------
 
-_RCT_EXTRACTOR_PATH = r"C:\Users\user\rct-extractor-v2"
+_RCT_EXTRACTOR_PATH = r"C:\Projects\rct-extractor-v2"
 _MEGA_EVAL_PATH = (
-    r"C:\Users\user\rct-extractor-v2\gold_data\mega\mega_eval_v10_3_merged.jsonl"
+    r"C:\Projects\rct-extractor-v2\gold_data\mega\mega_eval_v10_3_merged.jsonl"
 )
 
 _TIER_5PCT = 0.05

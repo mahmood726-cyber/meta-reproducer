@@ -21,13 +21,13 @@ ORCID: 0009-0003-7781-4478
 
 **Main outcome measures:** Study-level reproducibility (agreement between extracted and Cochrane-reported effect sizes within 5% and 10% tolerance), review-level reproducibility (agreement of pooled estimates in direction, statistical significance, and magnitude), and open access coverage (proportion of studies with freely accessible full-text publications).
 
-**Results:** Of 14,340 studies, only 1,767 (12.3%) had openly accessible PDFs, leaving 87.7% of the evidence base computationally inaccessible. Among 297 reviews with at least one accessible study, the per-review strict match rate (within 5%) was 7.1% (median 0%). Only 10 reviews (2.0%) achieved sufficient study coverage (>=30%) for pooled comparison: 1 reproduced within tolerance, 4 showed minor discrepancies, and 5 showed major discrepancies including direction reversals. The dominant barrier was not methodological but infrastructural: missing PDFs accounted for 95.2% of all extraction failures. Among the 10 fully assessable reviews, 5 (50%) showed reversed effect direction between reference and reproduced pooled estimates, though 9 of 10 (90%) retained the same statistical significance classification.
+**Results:** Of 14,340 studies, only 1,688 (11.8%) had openly accessible PDFs, leaving 88.2% of the evidence base computationally inaccessible. Among 287 reviews with at least one accessible study, the per-review strict match rate (within 5%) was 5.1% (median 0%). Only 6 reviews (1.2%) yielded non-insufficient classifications: 1 reproduced within tolerance, 3 showed minor discrepancies, and 2 showed major discrepancies including a direction reversal. Seventy-eight reviews (15.6%) had >=30% study coverage, yet most remained classified as insufficient due to low match rates among accessible studies. The dominant barrier was not methodological but infrastructural: inaccessible PDFs accounted for 88.2% of all studies.
 
 **Conclusions:** The vast majority of Cochrane meta-analyses cannot currently be computationally reproduced, primarily because the underlying trial reports are not openly accessible. This represents a fundamental barrier to evidence verification that no methodological improvement can overcome. Mandating structured data deposition for trials included in systematic reviews would transform reproducibility from an aspiration to a routine audit.
 
 **Registration:** [OSF_REGISTRATION_URL]
 
-**Data sharing:** Pipeline code, results, and interactive dashboard available at [GITHUB_URL]. Dataset deposited at [ZENODO_DOI].
+**Data sharing:** Pipeline code, results, and interactive dashboard available at https://github.com/mahmood726-cyber/meta-reproducer. Dataset deposited at [ZENODO_DOI].
 
 ---
 
@@ -40,8 +40,8 @@ ORCID: 0009-0003-7781-4478
 ## What this study adds
 
 - First large-scale automated reproducibility audit of 501 Cochrane meta-analyses encompassing 14,340 studies
-- Only 12.3% of constituent studies are openly accessible, making computational verification impossible for the majority of evidence
-- Among the small subset of reviews with sufficient open access coverage, half showed effect direction reversals when re-derived from source publications
+- Only 11.8% of constituent studies are openly accessible, making computational verification impossible for the majority of evidence
+- Among the 6 reviews with sufficient data for classification, 2 (33%) showed major discrepancies including a direction reversal when re-derived from source publications
 - The primary barrier to reproducibility is access, not methodology
 
 ---
@@ -275,7 +275,7 @@ The computational reproducibility of Cochrane meta-analyses is severely limited 
 
 **Ethical approval:** Not required. This study analysed publicly available data from published Cochrane reviews and openly accessible trial publications.
 
-**Data sharing:** The MetaReproducer pipeline, complete results, TruthCert provenance bundles, and interactive dashboard are available at [GITHUB_URL]. The Pairwise70 dataset is deposited at [ZENODO_DOI].
+**Data sharing:** The MetaReproducer pipeline, complete results, TruthCert provenance bundles, and interactive dashboard are available at https://github.com/mahmood726-cyber/meta-reproducer. The Pairwise70 dataset is deposited at [ZENODO_DOI].
 
 **Transparency:** The lead author (the manuscript's guarantor) affirms that the manuscript is an honest, accurate, and transparent account of the study being reported; that no important aspects of the study have been omitted; and that any discrepancies from the study as registered have been explained.
 

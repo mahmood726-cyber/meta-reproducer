@@ -6,8 +6,8 @@ Pipeline re-extracts effects from trial PDFs, re-pools, compares against Cochran
 
 ## Key paths
 - RDA files: C:/Users/user/OneDrive - NHS/Documents/Pairwise70/data/
-- RCT Extractor: C:/Users/user/rct-extractor-v2/
-- Mega gold data: C:/Users/user/rct-extractor-v2/gold_data/mega/
+- RCT Extractor: C:/Projects/rct-extractor-v2/
+- Mega gold data: C:/Projects/rct-extractor-v2/gold_data/mega/
 - Gold standard pooled: C:/Users/user/Downloads/Metaprojects/TruthCert-Validation-Papers/data/gold_standard/
 
 ## Rules
