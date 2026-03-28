@@ -1,0 +1,59 @@
+{
+  "title": "Computational Reproducibility Audit of 501 Cochrane Meta-Analyses",
+  "slug": "metareproducer-cochrane-audit",
+  "author": "Mahmood Ahmad",
+  "date": "2026-03-26",
+  "path": "C:\\Models\\MetaReproducer",
+  "type": "methods",
+  "primary_estimand": "Prevalence",
+  "study_count": 501,
+  "participant_count": 14340,
+  "summary": "Only 11.8% of studies in 501 Cochrane reviews are openly accessible, making computational reproducibility verification impossible for the majority.",
+  "body": "Can Cochrane meta-analyses be computationally reproduced when an automated pipeline re-extracts effect sizes from source trial publications? We audited 501 Cochrane systematic reviews encompassing 14,340 individual studies using MetaReproducer, a deterministic pipeline that parses RevMan data files, retrieves open-access PDFs, extracts effects via RCT Extractor v10.3, and re-pools results using inverse-variance random-effects models. The pipeline infers effect type by back-computing candidate log-odds and log-risk ratios from two-by-two tables, matching against Cochrane reference values within 0.0001 tolerance on the log scale. Only 1,688 of 14,340 studies had accessible PDFs, yielding an open-access prevalence of 11.8 percent (95% CI 11.3-12.3), leaving most evidence computationally unverifiable. Among six reviews with sufficient coverage for classification, two showed major discrepancies including one complete direction reversal. The primary barrier to reproducibility is infrastructural access rather than methodology, suggesting that mandating structured data deposition could transform verification. This fundamental limitation of open-access coverage constrains any automated reproducibility audit of the published evidence base.",
+  "sentences": [
+    {
+      "role": "Question",
+      "text": "Can Cochrane meta-analyses be computationally reproduced when an automated pipeline re-extracts effect sizes from source trial publications?"
+    },
+    {
+      "role": "Dataset",
+      "text": "We audited 501 Cochrane systematic reviews encompassing 14,340 individual studies using MetaReproducer, a deterministic pipeline that parses RevMan data files, retrieves open-access PDFs, extracts effects via RCT Extractor v10.3, and re-pools results using inverse-variance random-effects models."
+    },
+    {
+      "role": "Method",
+      "text": "The pipeline infers effect type by back-computing candidate log-odds and log-risk ratios from two-by-two tables, matching against Cochrane reference values within 0.0001 tolerance on the log scale."
+    },
+    {
+      "role": "Primary result",
+      "text": "Only 1,688 of 14,340 studies had accessible PDFs, yielding an open-access prevalence of 11.8 percent (95% CI 11.3-12.3), leaving most evidence computationally unverifiable."
+    },
+    {
+      "role": "Robustness",
+      "text": "Among six reviews with sufficient coverage for classification, two showed major discrepancies including one complete direction reversal."
+    },
+    {
+      "role": "Interpretation",
+      "text": "The primary barrier to reproducibility is infrastructural access rather than methodology, suggesting that mandating structured data deposition could transform verification."
+    },
+    {
+      "role": "Boundary",
+      "text": "This fundamental limitation of open-access coverage constrains any automated reproducibility audit of the published evidence base."
+    }
+  ],
+  "notes": {
+    "app": "MetaReproducer v1.0",
+    "data": "501 Cochrane systematic reviews, 14,340 studies, Pairwise70 dataset",
+    "code": "https://github.com/mahmood726-cyber/meta-reproducer",
+    "doi": "",
+    "version": "1.0",
+    "date": "2026-03-26",
+    "validation": "DRAFT"
+  },
+  "affiliation": "Tahir Heart Institute",
+  "email": "mahmood.ahmad2@nhs.net",
+  "references": [
+    "Marshall IJ, Noel-Storr A, Kuber J, et al. Machine learning for identifying randomized controlled trials: an evaluation and practitioner's guide. Res Synth Methods. 2018;9(4):602-614.",
+    "Jonnalagadda SR, Goyal P, Huffman MD. Automating data extraction in systematic reviews: a systematic review. Syst Rev. 2015;4:78.",
+    "Borenstein M, Hedges LV, Higgins JPT, Rothstein HR. Introduction to Meta-Analysis. 2nd ed. Wiley; 2021."
+  ]
+}
