@@ -1,0 +1,30 @@
+{
+  "title": "MetaReproducer: Automated Reproducibility Audit of 501 Cochrane Meta-Analyses",
+  "description": "Pipeline code, results, and TruthCert provenance bundles for a large-scale automated reproducibility audit of 501 Cochrane systematic reviews encompassing 14,340 studies. Only 12.3% of constituent studies were openly accessible; among assessable reviews, 50% showed effect direction reversals.",
+  "upload_type": "dataset",
+  "creators": [
+    {
+      "name": "Ahmad, Mahmood",
+      "affiliation": "Royal Free Hospital, London, United Kingdom",
+      "orcid": "0009-0003-7781-4478"
+    }
+  ],
+  "keywords": [
+    "reproducibility",
+    "meta-analysis",
+    "Cochrane",
+    "systematic review",
+    "open access",
+    "computational reproducibility",
+    "evidence verification"
+  ],
+  "license": "MIT",
+  "access_right": "open",
+  "related_identifiers": [
+    {
+      "relation": "isSupplementTo",
+      "identifier": "https://github.com/mahmood726-cyber/metareproducer",
+      "scheme": "url"
+    }
+  ]
+}

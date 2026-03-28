@@ -1,0 +1,1373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MetaReproducer Dashboard</title>
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<style>
+/* ===================== CSS Variables & Theme ===================== */
+:root {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8fafc;
+  --bg-card: #ffffff;
+  --bg-hover: #f1f5f9;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+  --border-color: #e2e8f0;
+  --border-focus: #3b82f6;
+  --shadow: 0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06);
+  --shadow-lg: 0 4px 6px rgba(0,0,0,0.1), 0 2px 4px rgba(0,0,0,0.06);
+  --radius: 8px;
+  --tier-reproduced: #22c55e;
+  --tier-minor: #f59e0b;
+  --tier-major: #ef4444;
+  --tier-insufficient: #9ca3af;
+  --tier-reproduced-bg: #dcfce7;
+  --tier-minor-bg: #fef3c7;
+  --tier-major-bg: #fee2e2;
+  --tier-insufficient-bg: #f3f4f6;
+  --plotly-bg: #ffffff;
+  --plotly-paper: #ffffff;
+  --plotly-grid: #e2e8f0;
+  --plotly-text: #0f172a;
+}
+
+[data-theme="dark"] {
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --bg-card: #1e293b;
+  --bg-hover: #334155;
+  --text-primary: #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --text-muted: #64748b;
+  --border-color: #334155;
+  --border-focus: #60a5fa;
+  --shadow: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
+  --shadow-lg: 0 4px 6px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.2);
+  --tier-reproduced-bg: #14532d;
+  --tier-minor-bg: #78350f;
+  --tier-major-bg: #7f1d1d;
+  --tier-insufficient-bg: #374151;
+  --plotly-bg: #1e293b;
+  --plotly-paper: #1e293b;
+  --plotly-grid: #334155;
+  --plotly-text: #f1f5f9;
+}
+
+/* ===================== Reset & Base ===================== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  line-height: 1.6;
+  min-height: 100vh;
+  transition: background 0.2s, color 0.2s;
+}
+
+/* ===================== Header ===================== */
+.app-header {
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border-color);
+  padding: 16px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  box-shadow: var(--shadow);
+}
+
+.app-header h1 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.header-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.file-input-wrapper {
+  position: relative;
+}
+
+.file-input-wrapper label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: #3b82f6;
+  color: #fff;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: background 0.15s;
+}
+
+.file-input-wrapper label:hover { background: #2563eb; }
+.file-input-wrapper label:focus-within { outline: 2px solid var(--border-focus); outline-offset: 2px; }
+
+.file-input-wrapper input[type="file"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.btn:hover { background: var(--bg-hover); }
+.btn:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
+
+/* ===================== Tab Navigation ===================== */
+.tab-nav {
+  display: flex;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border-color);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.tab-btn {
+  padding: 12px 20px;
+  border: none;
+  border-bottom: 3px solid transparent;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.tab-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
+.tab-btn:focus-visible { outline: 2px solid var(--border-focus); outline-offset: -2px; }
+.tab-btn[aria-selected="true"] {
+  color: #3b82f6;
+  border-bottom-color: #3b82f6;
+  font-weight: 600;
+}
+
+/* ===================== Panels ===================== */
+.panel {
+  display: none;
+  padding: 24px;
+  max-width: 1280px;
+  margin: 0 auto;
+  animation: fadeIn 0.2s ease;
+}
+
+.panel.active { display: block; }
+
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+/* ===================== Cards ===================== */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: var(--shadow);
+  margin-bottom: 20px;
+}
+
+.card-title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--text-primary);
+}
+
+/* ===================== Stats Grid ===================== */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.stat-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  box-shadow: var(--shadow);
+}
+
+.stat-card .stat-value {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.stat-card .stat-label {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.stat-card .stat-sublabel {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+/* ===================== Tier Badges ===================== */
+.tier-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.tier-badge.reproduced { background: var(--tier-reproduced-bg); color: var(--tier-reproduced); }
+.tier-badge.minor_discrepancy { background: var(--tier-minor-bg); color: var(--tier-minor); }
+.tier-badge.major_discrepancy { background: var(--tier-major-bg); color: var(--tier-major); }
+.tier-badge.insufficient { background: var(--tier-insufficient-bg); color: var(--tier-insufficient); }
+
+/* ===================== Explorer Table ===================== */
+.table-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.search-input {
+  flex: 1;
+  min-width: 200px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+}
+
+.search-input:focus { outline: 2px solid var(--border-focus); outline-offset: -1px; }
+
+.table-wrapper {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+thead th {
+  padding: 10px 12px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 2px solid var(--border-color);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  position: relative;
+}
+
+thead th:hover { color: var(--text-primary); }
+
+thead th .sort-arrow {
+  margin-left: 4px;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+thead th .sort-arrow.active { color: #3b82f6; }
+
+tbody tr {
+  border-bottom: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+tbody tr:hover { background: var(--bg-hover); }
+tbody tr:focus-visible { outline: 2px solid var(--border-focus); outline-offset: -2px; }
+
+tbody td {
+  padding: 10px 12px;
+  color: var(--text-primary);
+}
+
+/* ===================== Drilldown Panel ===================== */
+.drilldown-backdrop {
+  display: none;
+}
+
+.drilldown-backdrop.active {
+  display: block;
+}
+
+.drilldown-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.drilldown-header h2 {
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.close-btn {
+  padding: 6px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+
+.close-btn:hover { background: var(--bg-hover); }
+.close-btn:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
+
+.drilldown-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 0.875rem;
+}
+
+.detail-row .label { color: var(--text-secondary); font-weight: 500; }
+.detail-row .value { color: var(--text-primary); font-weight: 600; text-align: right; }
+
+/* ===================== Charts ===================== */
+.chart-container {
+  width: 100%;
+  min-height: 350px;
+}
+
+.chart-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+/* ===================== Empty State ===================== */
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--text-muted);
+}
+
+.empty-state .icon {
+  font-size: 3rem;
+  margin-bottom: 12px;
+}
+
+.empty-state h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.empty-state p { font-size: 0.9rem; }
+
+/* ===================== Print ===================== */
+@media print {
+  .app-header, .tab-nav { position: static !important; }
+  .btn, .file-input-wrapper, #themeToggle, #csvExport { display: none !important; }
+  .panel { display: block !important; page-break-inside: avoid; }
+  .tab-nav { display: none !important; }
+  body { background: #fff; color: #000; }
+  .card { box-shadow: none; border: 1px solid #ccc; }
+}
+
+/* ===================== Responsive ===================== */
+@media (max-width: 768px) {
+  .app-header { padding: 12px 16px; }
+  .app-header h1 { font-size: 1.05rem; }
+  .panel { padding: 16px; }
+  .chart-row { grid-template-columns: 1fr; }
+  .stats-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+  .tab-btn { padding: 10px 14px; font-size: 0.8rem; }
+}
+
+@media (max-width: 480px) {
+  .header-controls { width: 100%; justify-content: flex-end; }
+  .stats-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<!-- ======================== Header ======================== -->
+<header class="app-header">
+  <h1>MetaReproducer Dashboard</h1>
+  <div class="header-controls">
+    <div class="file-input-wrapper">
+      <label for="fileInput" tabindex="0" role="button" aria-label="Load summary JSON file">
+        <span aria-hidden="true">&#128194;</span> Load summary.json
+        <input type="file" id="fileInput" accept=".json,application/json">
+      </label>
+    </div>
+    <button class="btn" id="csvExport" disabled aria-label="Export data as CSV">
+      <span aria-hidden="true">&#8595;</span> CSV Export
+    </button>
+    <button class="btn" id="themeToggle" aria-label="Toggle dark or light theme">
+      <span id="themeIcon" aria-hidden="true">&#9790;</span> Theme
+    </button>
+  </div>
+</header>
+
+<!-- ======================== Tab Navigation ======================== -->
+<nav class="tab-nav" role="tablist" aria-label="Dashboard views">
+  <button class="tab-btn" role="tab" data-tab="overviewPanel" aria-selected="true" aria-controls="overviewPanel" id="tab-overview">Overview</button>
+  <button class="tab-btn" role="tab" data-tab="explorerPanel" aria-selected="false" aria-controls="explorerPanel" id="tab-explorer">Review Explorer</button>
+  <button class="tab-btn" role="tab" data-tab="drilldownPanel" aria-selected="false" aria-controls="drilldownPanel" id="tab-drilldown">Drill-Down</button>
+  <button class="tab-btn" role="tab" data-tab="taxonomyPanel" aria-selected="false" aria-controls="taxonomyPanel" id="tab-taxonomy">Error Taxonomy</button>
+  <button class="tab-btn" role="tab" data-tab="fragilityPanel" aria-selected="false" aria-controls="fragilityPanel" id="tab-fragility">Fragility Landscape</button>
+  <button class="tab-btn" role="tab" data-tab="coveragePanel" aria-selected="false" aria-controls="coveragePanel" id="tab-coverage">OA Coverage</button>
+</nav>
+
+<!-- ======================== Overview Panel ======================== -->
+<section class="panel active" id="overviewPanel" role="tabpanel" aria-labelledby="tab-overview">
+  <div id="overviewEmpty" class="empty-state">
+    <div class="icon" aria-hidden="true">&#128202;</div>
+    <h2>No Data Loaded</h2>
+    <p>Load a summary.json file to see the reproducibility overview.</p>
+  </div>
+  <div id="overviewContent" style="display:none;">
+    <div class="stats-grid" id="overviewStats"></div>
+    <div class="chart-row">
+      <div class="card">
+        <div class="card-title">Classification Distribution</div>
+        <div class="chart-container" id="donutChart"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Breakdown by Effect Type</div>
+        <div class="chart-container" id="barChart"></div>
+      </div>
+    </div>
+    <div class="card" id="oaSummaryCard">
+      <div class="card-title">OA Coverage Summary</div>
+      <p id="oaSummaryText" style="color: var(--text-secondary); font-size: 0.9rem;"></p>
+    </div>
+  </div>
+</section>
+
+<!-- ======================== Explorer Panel ======================== -->
+<section class="panel" id="explorerPanel" role="tabpanel" aria-labelledby="tab-explorer">
+  <div id="explorerEmpty" class="empty-state">
+    <div class="icon" aria-hidden="true">&#128270;</div>
+    <h2>No Data Loaded</h2>
+    <p>Load a summary.json file to explore reviews.</p>
+  </div>
+  <div id="explorerContent" style="display:none;">
+    <div class="table-controls">
+      <input type="search" class="search-input" id="explorerSearch" placeholder="Search reviews..." aria-label="Search reviews">
+    </div>
+    <div class="table-wrapper">
+      <table id="explorerTable" aria-label="Review results table">
+        <thead>
+          <tr>
+            <th data-col="review_id" tabindex="0" role="columnheader" aria-sort="none">Review ID <span class="sort-arrow">&#9650;&#9660;</span></th>
+            <th data-col="outcome_label" tabindex="0" role="columnheader" aria-sort="none">Outcome <span class="sort-arrow">&#9650;&#9660;</span></th>
+            <th data-col="inferred_effect_type" tabindex="0" role="columnheader" aria-sort="none">Effect Type <span class="sort-arrow">&#9650;&#9660;</span></th>
+            <th data-col="k" tabindex="0" role="columnheader" aria-sort="none">k <span class="sort-arrow">&#9650;&#9660;</span></th>
+            <th data-col="oa_coverage" tabindex="0" role="columnheader" aria-sort="none">OA Coverage <span class="sort-arrow">&#9650;&#9660;</span></th>
+            <th data-col="tier" tabindex="0" role="columnheader" aria-sort="none">Tier <span class="sort-arrow">&#9650;&#9660;</span></th>
+            <th data-col="primary_error" tabindex="0" role="columnheader" aria-sort="none">Primary Error <span class="sort-arrow">&#9650;&#9660;</span></th>
+          </tr>
+        </thead>
+        <tbody id="explorerBody"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ======================== Drill-Down Panel ======================== -->
+<section class="panel" id="drilldownPanel" role="tabpanel" aria-labelledby="tab-drilldown">
+  <div id="drilldownEmpty" class="empty-state">
+    <div class="icon" aria-hidden="true">&#128203;</div>
+    <h2>No Review Selected</h2>
+    <p>Click a review row in the Explorer tab to see details.</p>
+  </div>
+  <div id="drilldownContent" style="display:none;"></div>
+</section>
+
+<!-- ======================== Error Taxonomy Panel ======================== -->
+<section class="panel" id="taxonomyPanel" role="tabpanel" aria-labelledby="tab-taxonomy">
+  <div id="taxonomyEmpty" class="empty-state">
+    <div class="icon" aria-hidden="true">&#128200;</div>
+    <h2>No Data Loaded</h2>
+    <p>Load a summary.json file to see error taxonomy.</p>
+  </div>
+  <div id="taxonomyContent" style="display:none;">
+    <div class="card">
+      <div class="card-title">Error Categories Across Reviews</div>
+      <div class="chart-container" id="taxonomyChart"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Error Category Totals</div>
+      <div id="taxonomyTotals" style="font-size: 0.9rem; color: var(--text-secondary);"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================== Fragility Landscape Panel ======================== -->
+<section class="panel" id="fragilityPanel" role="tabpanel" aria-labelledby="tab-fragility">
+  <div id="fragilityEmpty" class="empty-state">
+    <div class="icon" aria-hidden="true">&#128308;</div>
+    <h2>No Data Loaded</h2>
+    <p>Load a summary.json file to see fragility landscape.</p>
+  </div>
+  <div id="fragilityContent" style="display:none;">
+    <div class="card">
+      <div class="card-title">Fragility Landscape: k vs Effect Difference</div>
+      <div class="chart-container" id="fragilityChart"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================== OA Coverage Panel ======================== -->
+<section class="panel" id="coveragePanel" role="tabpanel" aria-labelledby="tab-coverage">
+  <div id="coverageEmpty" class="empty-state">
+    <div class="icon" aria-hidden="true">&#128218;</div>
+    <h2>No Data Loaded</h2>
+    <p>Load a summary.json file to see coverage analysis.</p>
+  </div>
+  <div id="coverageContent" style="display:none;">
+    <div class="stats-grid" id="coverageStats"></div>
+    <div class="card">
+      <div class="card-title">k-Coverage Distribution</div>
+      <div class="chart-container" id="coverageChart"></div>
+    </div>
+  </div>
+</section>
+
+<script>
+/* ================================================================
+   MetaReproducer Dashboard — Vanilla JS
+   ================================================================ */
+(function() {
+  'use strict';
+
+  // -------------------- State --------------------
+  let data = [];
+  let sortCol = null;
+  let sortAsc = true;
+  let selectedReview = null;
+
+  // -------------------- Utilities --------------------
+  function escapeHtml(str) {
+    if (str == null) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#x27;');
+  }
+
+  function pct(val, digits) {
+    if (val == null || !isFinite(val)) return 'N/A';
+    return (val * 100).toFixed(digits != null ? digits : 1) + '%';
+  }
+
+  function num(val, digits) {
+    if (val == null || !isFinite(val)) return 'N/A';
+    return Number(val).toFixed(digits != null ? digits : 3);
+  }
+
+  function tierLabel(tier) {
+    if (!tier) return 'insufficient';
+    return tier;
+  }
+
+  function tierDisplay(tier) {
+    var map = {
+      'reproduced': 'Reproduced',
+      'minor_discrepancy': 'Minor',
+      'major_discrepancy': 'Major',
+      'insufficient': 'Insufficient'
+    };
+    return map[tier] || 'Insufficient';
+  }
+
+  var TIER_COLORS = {
+    'reproduced': '#22c55e',
+    'minor_discrepancy': '#f59e0b',
+    'major_discrepancy': '#ef4444',
+    'insufficient': '#9ca3af'
+  };
+
+  // -------------------- Theme --------------------
+  var themeToggle = document.getElementById('themeToggle');
+  var themeIcon = document.getElementById('themeIcon');
+
+  function getStoredTheme() {
+    try { return localStorage.getItem('metareproducer-theme'); } catch(e) { return null; }
+  }
+
+  function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    // Moon for dark mode toggle, sun for light
+    themeIcon.innerHTML = theme === 'dark' ? '&#9788;' : '&#9790;';
+    try { localStorage.setItem('metareproducer-theme', theme); } catch(e) { /* noop */ }
+    // Re-render Plotly charts with new theme colors
+    if (data.length > 0) {
+      renderOverview();
+      renderTaxonomy();
+      renderFragility();
+      renderCoverage();
+    }
+  }
+
+  themeToggle.addEventListener('click', function() {
+    var current = document.documentElement.getAttribute('data-theme') || 'light';
+    applyTheme(current === 'dark' ? 'light' : 'dark');
+  });
+
+  // Init theme
+  var storedTheme = getStoredTheme();
+  if (storedTheme) {
+    applyTheme(storedTheme);
+  } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+    applyTheme('dark');
+  }
+
+  // -------------------- Tab Navigation --------------------
+  var tabBtns = document.querySelectorAll('.tab-btn');
+  var panels = document.querySelectorAll('.panel');
+
+  function switchTab(tabId) {
+    tabBtns.forEach(function(btn) {
+      var isSelected = btn.getAttribute('data-tab') === tabId;
+      btn.setAttribute('aria-selected', isSelected ? 'true' : 'false');
+    });
+    panels.forEach(function(p) {
+      p.classList.toggle('active', p.id === tabId);
+    });
+  }
+
+  tabBtns.forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      switchTab(this.getAttribute('data-tab'));
+    });
+    btn.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        switchTab(this.getAttribute('data-tab'));
+      }
+    });
+  });
+
+  // -------------------- File Input --------------------
+  var fileInput = document.getElementById('fileInput');
+  var csvExportBtn = document.getElementById('csvExport');
+
+  fileInput.addEventListener('change', function(e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(ev) {
+      try {
+        var parsed = JSON.parse(ev.target.result);
+        if (!Array.isArray(parsed)) {
+          alert('Invalid format: expected a JSON array.');
+          return;
+        }
+        data = parsed;
+        csvExportBtn.disabled = false;
+        renderAll();
+      } catch(err) {
+        alert('Error parsing JSON: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+  });
+
+  // -------------------- CSV Export --------------------
+  csvExportBtn.addEventListener('click', exportCSV);
+  csvExportBtn.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); exportCSV(); }
+  });
+
+  function exportCSV() {
+    if (data.length === 0) return;
+    var headers = [
+      'review_id','outcome_label','inferred_effect_type','total_studies','n_with_pdf',
+      'matched_strict','matched_moderate','match_rate_strict','match_rate_moderate',
+      'tier','pct_difference','same_direction','same_significance',
+      'reference_k','reproduced_k','k_coverage',
+      'ref_pooled','ref_se','ref_tau2','ref_i2',
+      'repro_pooled','repro_se','repro_tau2','repro_i2',
+      'missing_pdf','extraction_failure','no_match','success','primary_error_source',
+      'classification'
+    ];
+    var rows = [headers.join(',')];
+    data.forEach(function(d) {
+      var sl = d.study_level || {};
+      var rl = d.review_level || {};
+      var rp = d.reference_pooled || {};
+      var pp = d.reproduced_pooled || {};
+      var er = d.errors || {};
+      var ct = d.cert || {};
+      var row = [
+        csvVal(d.review_id), csvVal(d.outcome_label), csvVal(d.inferred_effect_type),
+        csvNum(sl.total_studies), csvNum(sl.n_with_pdf),
+        csvNum(sl.matched_strict), csvNum(sl.matched_moderate),
+        csvNum(sl.match_rate_strict), csvNum(sl.match_rate_moderate),
+        csvVal(rl.tier), csvNum(rl.pct_difference),
+        rl.same_direction != null ? rl.same_direction : '',
+        rl.same_significance != null ? rl.same_significance : '',
+        csvNum(rl.reference_k), csvNum(rl.reproduced_k), csvNum(rl.k_coverage),
+        csvNum(rp.pooled), csvNum(rp.se), csvNum(rp.tau2), csvNum(rp.i2),
+        csvNum(pp.pooled), csvNum(pp.se), csvNum(pp.tau2), csvNum(pp.i2),
+        csvNum(er.missing_pdf), csvNum(er.extraction_failure), csvNum(er.no_match),
+        csvNum(er.success), csvVal(er.primary_error_source),
+        csvVal(ct.classification)
+      ];
+      rows.push(row.join(','));
+    });
+    var blob = new Blob([rows.join('\n')], {type: 'text/csv;charset=utf-8;'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'metareproducer_export.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function csvVal(v) {
+    if (v == null) return '';
+    var s = String(v);
+    if (s.indexOf(',') >= 0 || s.indexOf('"') >= 0 || s.indexOf('\n') >= 0) {
+      return '"' + s.replace(/"/g, '""') + '"';
+    }
+    return s;
+  }
+
+  function csvNum(v) {
+    if (v == null || (typeof v === 'number' && !isFinite(v))) return '';
+    return String(v);
+  }
+
+  // -------------------- Render All --------------------
+  function renderAll() {
+    renderOverview();
+    renderExplorer();
+    renderTaxonomy();
+    renderFragility();
+    renderCoverage();
+    // Clear drilldown
+    selectedReview = null;
+    document.getElementById('drilldownContent').style.display = 'none';
+    document.getElementById('drilldownEmpty').style.display = '';
+  }
+
+  // -------------------- Plotly Theme Helper --------------------
+  function plotlyLayout(extra) {
+    var cs = getComputedStyle(document.documentElement);
+    var base = {
+      paper_bgcolor: cs.getPropertyValue('--plotly-paper').trim(),
+      plot_bgcolor: cs.getPropertyValue('--plotly-bg').trim(),
+      font: { color: cs.getPropertyValue('--plotly-text').trim(), family: '-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif' },
+      margin: { t: 30, r: 20, b: 50, l: 60 },
+      xaxis: { gridcolor: cs.getPropertyValue('--plotly-grid').trim(), zerolinecolor: cs.getPropertyValue('--plotly-grid').trim() },
+      yaxis: { gridcolor: cs.getPropertyValue('--plotly-grid').trim(), zerolinecolor: cs.getPropertyValue('--plotly-grid').trim() }
+    };
+    if (extra) {
+      for (var k in extra) {
+        if (typeof extra[k] === 'object' && !Array.isArray(extra[k]) && base[k]) {
+          for (var j in extra[k]) { base[k][j] = extra[k][j]; }
+        } else {
+          base[k] = extra[k];
+        }
+      }
+    }
+    return base;
+  }
+
+  var PLOTLY_CONFIG = { responsive: true, displayModeBar: false };
+
+  // -------------------- Overview --------------------
+  function renderOverview() {
+    if (data.length === 0) {
+      document.getElementById('overviewEmpty').style.display = '';
+      document.getElementById('overviewContent').style.display = 'none';
+      return;
+    }
+    document.getElementById('overviewEmpty').style.display = 'none';
+    document.getElementById('overviewContent').style.display = '';
+
+    // Compute stats
+    var totalEffects = 0;
+    var reproducedEffects = 0;
+    var tierCounts = { reproduced: 0, minor_discrepancy: 0, major_discrepancy: 0, insufficient: 0 };
+
+    data.forEach(function(d) {
+      var sl = d.study_level || {};
+      totalEffects += sl.n_extracted || 0;
+      reproducedEffects += sl.matched_moderate || 0;
+      var tier = (d.review_level && d.review_level.tier) ? d.review_level.tier : 'insufficient';
+      if (tierCounts[tier] != null) tierCounts[tier]++;
+      else tierCounts.insufficient++;
+    });
+
+    var totalReviews = data.length;
+    var classifiedReviews = totalReviews - tierCounts.insufficient;
+    var effectPct = totalEffects > 0 ? (reproducedEffects / totalEffects * 100).toFixed(1) : '0.0';
+
+    // Stats cards
+    var statsHtml = '';
+    statsHtml += '<div class="stat-card"><div class="stat-value">' + escapeHtml(reproducedEffects + '/' + totalEffects) + '</div>';
+    statsHtml += '<div class="stat-label">Individual effects reproduced within tolerance</div>';
+    statsHtml += '<div class="stat-sublabel">' + escapeHtml(effectPct) + '% match rate</div></div>';
+
+    statsHtml += '<div class="stat-card"><div class="stat-value">' + escapeHtml(String(classifiedReviews) + '/' + String(totalReviews)) + '</div>';
+    statsHtml += '<div class="stat-label">Meta-analyses classified</div>';
+    statsHtml += '<div class="stat-sublabel">' + escapeHtml(tierCounts.reproduced + ' Reproduced, ' + tierCounts.minor_discrepancy + ' Minor, ' + tierCounts.major_discrepancy + ' Major') + '</div></div>';
+
+    statsHtml += '<div class="stat-card" style="border-left: 4px solid var(--tier-reproduced);"><div class="stat-value" style="color:var(--tier-reproduced);">' + escapeHtml(String(tierCounts.reproduced)) + '</div>';
+    statsHtml += '<div class="stat-label">Reproduced</div></div>';
+
+    statsHtml += '<div class="stat-card" style="border-left: 4px solid var(--tier-minor);"><div class="stat-value" style="color:var(--tier-minor);">' + escapeHtml(String(tierCounts.minor_discrepancy)) + '</div>';
+    statsHtml += '<div class="stat-label">Minor Discrepancy</div></div>';
+
+    statsHtml += '<div class="stat-card" style="border-left: 4px solid var(--tier-major);"><div class="stat-value" style="color:var(--tier-major);">' + escapeHtml(String(tierCounts.major_discrepancy)) + '</div>';
+    statsHtml += '<div class="stat-label">Major Discrepancy</div></div>';
+
+    statsHtml += '<div class="stat-card" style="border-left: 4px solid var(--tier-insufficient);"><div class="stat-value" style="color:var(--tier-insufficient);">' + escapeHtml(String(tierCounts.insufficient)) + '</div>';
+    statsHtml += '<div class="stat-label">Insufficient</div></div>';
+
+    document.getElementById('overviewStats').innerHTML = statsHtml;
+
+    // Donut chart
+    var donutLabels = ['Reproduced', 'Minor', 'Major', 'Insufficient'];
+    var donutValues = [tierCounts.reproduced, tierCounts.minor_discrepancy, tierCounts.major_discrepancy, tierCounts.insufficient];
+    var donutColors = [TIER_COLORS.reproduced, TIER_COLORS.minor_discrepancy, TIER_COLORS.major_discrepancy, TIER_COLORS.insufficient];
+
+    Plotly.newPlot('donutChart', [{
+      type: 'pie',
+      labels: donutLabels,
+      values: donutValues,
+      hole: 0.5,
+      marker: { colors: donutColors },
+      textinfo: 'label+value',
+      textfont: { size: 13 },
+      hoverinfo: 'label+percent+value'
+    }], plotlyLayout({ margin: { t: 10, b: 10, l: 10, r: 10 }, showlegend: true, legend: { orientation: 'h', y: -0.1 } }), PLOTLY_CONFIG);
+
+    // Bar chart by effect type
+    var effectTypes = {};
+    data.forEach(function(d) {
+      var et = d.inferred_effect_type || 'Unknown';
+      if (!effectTypes[et]) effectTypes[et] = { reproduced: 0, minor_discrepancy: 0, major_discrepancy: 0, insufficient: 0 };
+      var tier = (d.review_level && d.review_level.tier) ? d.review_level.tier : 'insufficient';
+      if (effectTypes[et][tier] != null) effectTypes[et][tier]++;
+      else effectTypes[et].insufficient++;
+    });
+
+    var etLabels = Object.keys(effectTypes).sort();
+    var barTraces = ['reproduced', 'minor_discrepancy', 'major_discrepancy', 'insufficient'].map(function(tier) {
+      return {
+        type: 'bar',
+        name: tierDisplay(tier),
+        orientation: 'h',
+        y: etLabels,
+        x: etLabels.map(function(et) { return effectTypes[et][tier]; }),
+        marker: { color: TIER_COLORS[tier] }
+      };
+    });
+
+    Plotly.newPlot('barChart', barTraces, plotlyLayout({
+      barmode: 'stack',
+      margin: { t: 10, b: 40, l: 60, r: 20 },
+      xaxis: { title: 'Number of Reviews' },
+      yaxis: { title: '' },
+      legend: { orientation: 'h', y: -0.2 }
+    }), PLOTLY_CONFIG);
+
+    // OA coverage summary
+    var covValues = data.map(function(d) {
+      return d.review_level ? d.review_level.k_coverage : null;
+    }).filter(function(v) { return v != null && isFinite(v); });
+
+    var oaText = '';
+    if (covValues.length > 0) {
+      var mean = covValues.reduce(function(a,b) { return a+b; }, 0) / covValues.length;
+      var min = Math.min.apply(null, covValues);
+      var max = Math.max.apply(null, covValues);
+      oaText = 'Across ' + covValues.length + ' classified reviews: mean k-coverage = ' + pct(mean, 1) +
+               ' (range ' + pct(min, 1) + ' to ' + pct(max, 1) + '). ' +
+               tierCounts.insufficient + ' review(s) had insufficient OA coverage for classification.';
+    } else {
+      oaText = 'No coverage data available.';
+    }
+    document.getElementById('oaSummaryText').textContent = oaText;
+  }
+
+  // -------------------- Explorer --------------------
+  var explorerSearch = document.getElementById('explorerSearch');
+  explorerSearch.addEventListener('input', renderExplorerRows);
+
+  function getRowData(d) {
+    var sl = d.study_level || {};
+    var rl = d.review_level || {};
+    var er = d.errors || {};
+    return {
+      review_id: d.review_id || '',
+      outcome_label: d.outcome_label || '',
+      inferred_effect_type: d.inferred_effect_type || '',
+      k: rl.reference_k != null ? rl.reference_k : (sl.total_studies != null ? sl.total_studies : ''),
+      oa_coverage: rl.k_coverage != null ? rl.k_coverage : null,
+      tier: (rl.tier) ? rl.tier : 'insufficient',
+      primary_error: er.primary_error_source || ''
+    };
+  }
+
+  function renderExplorer() {
+    if (data.length === 0) {
+      document.getElementById('explorerEmpty').style.display = '';
+      document.getElementById('explorerContent').style.display = 'none';
+      return;
+    }
+    document.getElementById('explorerEmpty').style.display = 'none';
+    document.getElementById('explorerContent').style.display = '';
+    renderExplorerRows();
+  }
+
+  function renderExplorerRows() {
+    var query = (explorerSearch.value || '').toLowerCase().trim();
+    var tbody = document.getElementById('explorerBody');
+
+    // Prepare row data and filter
+    var rows = data.map(function(d, i) {
+      var rd = getRowData(d);
+      rd._index = i;
+      return rd;
+    });
+
+    if (query) {
+      rows = rows.filter(function(rd) {
+        var searchable = [rd.review_id, rd.outcome_label, rd.inferred_effect_type, rd.tier, rd.primary_error].join(' ').toLowerCase();
+        return searchable.indexOf(query) >= 0;
+      });
+    }
+
+    // Sort
+    if (sortCol) {
+      rows.sort(function(a, b) {
+        var va = a[sortCol];
+        var vb = b[sortCol];
+        if (va == null && vb == null) return 0;
+        if (va == null) return 1;
+        if (vb == null) return -1;
+        if (typeof va === 'number' && typeof vb === 'number') {
+          return sortAsc ? va - vb : vb - va;
+        }
+        va = String(va).toLowerCase();
+        vb = String(vb).toLowerCase();
+        if (va < vb) return sortAsc ? -1 : 1;
+        if (va > vb) return sortAsc ? 1 : -1;
+        return 0;
+      });
+    }
+
+    var html = '';
+    rows.forEach(function(rd) {
+      html += '<tr tabindex="0" data-idx="' + rd._index + '">';
+      html += '<td>' + escapeHtml(rd.review_id) + '</td>';
+      html += '<td>' + escapeHtml(rd.outcome_label) + '</td>';
+      html += '<td>' + escapeHtml(rd.inferred_effect_type) + '</td>';
+      html += '<td>' + escapeHtml(String(rd.k)) + '</td>';
+      html += '<td>' + (rd.oa_coverage != null ? escapeHtml(pct(rd.oa_coverage, 1)) : 'N/A') + '</td>';
+      html += '<td><span class="tier-badge ' + escapeHtml(rd.tier) + '">' + escapeHtml(tierDisplay(rd.tier)) + '</span></td>';
+      html += '<td>' + escapeHtml(rd.primary_error.replace(/_/g, ' ')) + '</td>';
+      html += '</tr>';
+    });
+
+    tbody.innerHTML = html;
+
+    // Attach click/keyboard handlers
+    var trs = tbody.querySelectorAll('tr');
+    trs.forEach(function(tr) {
+      tr.addEventListener('click', function() {
+        var idx = parseInt(this.getAttribute('data-idx'), 10);
+        openDrilldown(idx);
+      });
+      tr.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          var idx = parseInt(this.getAttribute('data-idx'), 10);
+          openDrilldown(idx);
+        }
+      });
+    });
+  }
+
+  // Column header sorting
+  document.querySelectorAll('#explorerTable thead th').forEach(function(th) {
+    th.addEventListener('click', function() { handleSort(this); });
+    th.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort(this); }
+    });
+  });
+
+  function handleSort(th) {
+    var col = th.getAttribute('data-col');
+    if (!col) return;
+    if (sortCol === col) {
+      sortAsc = !sortAsc;
+    } else {
+      sortCol = col;
+      sortAsc = true;
+    }
+    // Update aria-sort
+    document.querySelectorAll('#explorerTable thead th').forEach(function(h) {
+      var hCol = h.getAttribute('data-col');
+      if (hCol === col) {
+        h.setAttribute('aria-sort', sortAsc ? 'ascending' : 'descending');
+        var arrow = h.querySelector('.sort-arrow');
+        if (arrow) { arrow.classList.add('active'); }
+      } else {
+        h.setAttribute('aria-sort', 'none');
+        var arrow2 = h.querySelector('.sort-arrow');
+        if (arrow2) { arrow2.classList.remove('active'); }
+      }
+    });
+    renderExplorerRows();
+  }
+
+  // -------------------- Drill-Down --------------------
+  function openDrilldown(idx) {
+    if (idx < 0 || idx >= data.length) return;
+    selectedReview = data[idx];
+    switchTab('drilldownPanel');
+    renderDrilldown();
+  }
+
+  function renderDrilldown() {
+    var container = document.getElementById('drilldownContent');
+    var emptyEl = document.getElementById('drilldownEmpty');
+
+    if (!selectedReview) {
+      container.style.display = 'none';
+      emptyEl.style.display = '';
+      return;
+    }
+
+    emptyEl.style.display = 'none';
+    container.style.display = '';
+
+    var d = selectedReview;
+    var sl = d.study_level || {};
+    var rl = d.review_level || {};
+    var rp = d.reference_pooled || {};
+    var pp = d.reproduced_pooled || {};
+    var er = d.errors || {};
+    var ct = d.cert || {};
+    var tier = rl.tier || 'insufficient';
+
+    var html = '';
+    html += '<div class="drilldown-header">';
+    html += '<h2>' + escapeHtml(d.review_id || 'Unknown') + ' &mdash; ' + escapeHtml(d.outcome_label || '') + '</h2>';
+    html += '<button class="close-btn" id="drilldownClose" aria-label="Close drill-down and return to explorer">Close</button>';
+    html += '</div>';
+
+    html += '<div style="margin-bottom: 16px;">';
+    html += '<span class="tier-badge ' + escapeHtml(tier) + '" style="font-size: 0.9rem; padding: 4px 14px;">' + escapeHtml(tierDisplay(tier)) + '</span>';
+    html += ' <span style="color: var(--text-secondary); font-size: 0.875rem; margin-left: 8px;">' + escapeHtml(d.inferred_effect_type || '') + '</span>';
+    html += '</div>';
+
+    html += '<div class="drilldown-grid">';
+
+    // Study-level stats
+    html += '<div class="card"><div class="card-title">Study-Level Stats</div>';
+    html += detailRow('Total Studies', sl.total_studies);
+    html += detailRow('With PDF', sl.n_with_pdf);
+    html += detailRow('Extracted', sl.n_extracted);
+    html += detailRow('Strict Match', sl.matched_strict);
+    html += detailRow('Moderate Match', sl.matched_moderate);
+    html += detailRow('Strict Match Rate', pct(sl.match_rate_strict, 1));
+    html += detailRow('Moderate Match Rate', pct(sl.match_rate_moderate, 1));
+    html += '</div>';
+
+    // Error breakdown
+    html += '<div class="card"><div class="card-title">Error Breakdown</div>';
+    html += detailRow('Missing PDF', er.missing_pdf);
+    html += detailRow('Extraction Failed', er.extraction_failure);
+    html += detailRow('No Match', er.no_match);
+    html += detailRow('Success', er.success);
+    html += detailRow('Primary Error', (er.primary_error_source || 'N/A').replace(/_/g, ' '));
+    html += '</div>';
+
+    // Reference vs Reproduced
+    html += '<div class="card"><div class="card-title">Reference Pooled</div>';
+    if (rp.pooled != null) {
+      html += detailRow('Pooled Estimate', num(rp.pooled));
+      html += detailRow('SE', num(rp.se));
+      html += detailRow('k', rp.k);
+      html += detailRow('tau\u00B2', num(rp.tau2, 4));
+      html += detailRow('I\u00B2', num(rp.i2, 1) + '%');
+    } else {
+      html += '<p style="color: var(--text-muted); font-size: 0.875rem;">Not available</p>';
+    }
+    html += '</div>';
+
+    html += '<div class="card"><div class="card-title">Reproduced Pooled</div>';
+    if (pp.pooled != null) {
+      html += detailRow('Pooled Estimate', num(pp.pooled));
+      html += detailRow('SE', num(pp.se));
+      html += detailRow('k', pp.k);
+      html += detailRow('tau\u00B2', num(pp.tau2, 4));
+      html += detailRow('I\u00B2', num(pp.i2, 1) + '%');
+    } else {
+      html += '<p style="color: var(--text-muted); font-size: 0.875rem;">Not available (insufficient coverage)</p>';
+    }
+    html += '</div>';
+
+    // Review-level comparison
+    html += '<div class="card"><div class="card-title">Review-Level Comparison</div>';
+    if (d.review_level) {
+      html += detailRow('% Difference', pct(rl.pct_difference, 1));
+      html += detailRow('Same Direction', rl.same_direction ? 'Yes' : 'No');
+      html += detailRow('Same Significance', rl.same_significance ? 'Yes' : 'No');
+      html += detailRow('Reference k', rl.reference_k);
+      html += detailRow('Reproduced k', rl.reproduced_k);
+      html += detailRow('k Coverage', pct(rl.k_coverage, 1));
+    } else {
+      html += '<p style="color: var(--text-muted); font-size: 0.875rem;">Insufficient data for review-level classification</p>';
+    }
+    html += '</div>';
+
+    // TruthCert
+    html += '<div class="card"><div class="card-title">TruthCert</div>';
+    html += detailRow('Review ID', ct.review_id || 'N/A');
+    html += detailRow('Classification', ct.classification || 'N/A');
+    if (ct.hash) {
+      html += detailRow('Hash', ct.hash);
+    }
+    html += '</div>';
+
+    html += '</div>'; // close drilldown-grid
+
+    container.innerHTML = html;
+
+    // Close button handler
+    document.getElementById('drilldownClose').addEventListener('click', function() {
+      switchTab('explorerPanel');
+    });
+    document.getElementById('drilldownClose').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); switchTab('explorerPanel'); }
+    });
+  }
+
+  function detailRow(label, value) {
+    return '<div class="detail-row"><span class="label">' + escapeHtml(label) + '</span><span class="value">' + escapeHtml(String(value != null ? value : 'N/A')) + '</span></div>';
+  }
+
+  // -------------------- Taxonomy --------------------
+  function renderTaxonomy() {
+    if (data.length === 0) {
+      document.getElementById('taxonomyEmpty').style.display = '';
+      document.getElementById('taxonomyContent').style.display = 'none';
+      return;
+    }
+    document.getElementById('taxonomyEmpty').style.display = 'none';
+    document.getElementById('taxonomyContent').style.display = '';
+
+    var categories = ['missing_pdf', 'extraction_failure', 'no_match', 'success'];
+    var catLabels = ['Missing PDF', 'Extraction Failure', 'No Match', 'Success'];
+    var catColors = ['#9ca3af', '#ef4444', '#f59e0b', '#22c55e'];
+
+    var reviewIds = data.map(function(d) { return d.review_id || 'Unknown'; });
+    var totals = {};
+    categories.forEach(function(cat) { totals[cat] = 0; });
+
+    var traces = categories.map(function(cat, ci) {
+      var vals = data.map(function(d) {
+        var er = d.errors || {};
+        var v = er[cat] != null ? er[cat] : 0;
+        totals[cat] += v;
+        return v;
+      });
+      return {
+        type: 'bar',
+        name: catLabels[ci],
+        x: reviewIds,
+        y: vals,
+        marker: { color: catColors[ci] }
+      };
+    });
+
+    Plotly.newPlot('taxonomyChart', traces, plotlyLayout({
+      barmode: 'stack',
+      margin: { t: 10, b: 80, l: 50, r: 20 },
+      xaxis: { title: 'Review', tickangle: -30 },
+      yaxis: { title: 'Study Count' },
+      legend: { orientation: 'h', y: -0.35 }
+    }), PLOTLY_CONFIG);
+
+    // Totals
+    var totHtml = '<div style="display: flex; gap: 24px; flex-wrap: wrap; margin-top: 8px;">';
+    categories.forEach(function(cat, ci) {
+      totHtml += '<div><strong style="color: ' + catColors[ci] + ';">' + escapeHtml(catLabels[ci]) + ':</strong> ' + escapeHtml(String(totals[cat])) + '</div>';
+    });
+    totHtml += '</div>';
+    document.getElementById('taxonomyTotals').innerHTML = totHtml;
+  }
+
+  // -------------------- Fragility Landscape --------------------
+  function renderFragility() {
+    if (data.length === 0) {
+      document.getElementById('fragilityEmpty').style.display = '';
+      document.getElementById('fragilityContent').style.display = 'none';
+      return;
+    }
+    document.getElementById('fragilityEmpty').style.display = 'none';
+    document.getElementById('fragilityContent').style.display = '';
+
+    // Only reviews with review_level != null
+    var filtered = data.filter(function(d) { return d.review_level != null; });
+
+    if (filtered.length === 0) {
+      document.getElementById('fragilityChart').innerHTML = '<p style="text-align:center; color: var(--text-muted); padding: 40px;">No reviews with classification data.</p>';
+      return;
+    }
+
+    // Group by tier for coloring
+    var tiers = ['reproduced', 'minor_discrepancy', 'major_discrepancy'];
+    var traces = tiers.map(function(tier) {
+      var items = filtered.filter(function(d) { return d.review_level.tier === tier; });
+      return {
+        type: 'scatter',
+        mode: 'markers',
+        name: tierDisplay(tier),
+        x: items.map(function(d) { return d.review_level.reference_k; }),
+        y: items.map(function(d) { return (d.review_level.pct_difference || 0) * 100; }),
+        text: items.map(function(d) { return d.review_id + ': ' + d.outcome_label; }),
+        hoverinfo: 'text+x+y',
+        marker: {
+          color: TIER_COLORS[tier],
+          size: 12,
+          opacity: 0.8,
+          line: { width: 1, color: '#fff' }
+        }
+      };
+    });
+
+    Plotly.newPlot('fragilityChart', traces, plotlyLayout({
+      margin: { t: 10, b: 50, l: 60, r: 20 },
+      xaxis: { title: 'k (number of studies in reference)' },
+      yaxis: { title: '% Effect Difference' },
+      legend: { orientation: 'h', y: -0.2 },
+      hovermode: 'closest'
+    }), PLOTLY_CONFIG);
+  }
+
+  // -------------------- OA Coverage --------------------
+  function renderCoverage() {
+    if (data.length === 0) {
+      document.getElementById('coverageEmpty').style.display = '';
+      document.getElementById('coverageContent').style.display = 'none';
+      return;
+    }
+    document.getElementById('coverageEmpty').style.display = 'none';
+    document.getElementById('coverageContent').style.display = '';
+
+    var covValues = [];
+    data.forEach(function(d) {
+      if (d.review_level && d.review_level.k_coverage != null && isFinite(d.review_level.k_coverage)) {
+        covValues.push(d.review_level.k_coverage);
+      }
+    });
+
+    // Summary stats
+    var statsHtml = '';
+    if (covValues.length > 0) {
+      var sorted = covValues.slice().sort(function(a,b) { return a - b; });
+      var mean = sorted.reduce(function(a,b) { return a+b; }, 0) / sorted.length;
+      var median = sorted.length % 2 === 0
+        ? (sorted[sorted.length/2 - 1] + sorted[sorted.length/2]) / 2
+        : sorted[Math.floor(sorted.length/2)];
+      var min = sorted[0];
+      var max = sorted[sorted.length - 1];
+
+      statsHtml += '<div class="stat-card"><div class="stat-value">' + escapeHtml(String(covValues.length)) + '</div><div class="stat-label">Reviews with coverage data</div></div>';
+      statsHtml += '<div class="stat-card"><div class="stat-value">' + escapeHtml(pct(mean, 1)) + '</div><div class="stat-label">Mean k-Coverage</div></div>';
+      statsHtml += '<div class="stat-card"><div class="stat-value">' + escapeHtml(pct(median, 1)) + '</div><div class="stat-label">Median k-Coverage</div></div>';
+      statsHtml += '<div class="stat-card"><div class="stat-value">' + escapeHtml(pct(min, 1) + ' - ' + pct(max, 1)) + '</div><div class="stat-label">Range</div></div>';
+    } else {
+      statsHtml = '<div class="stat-card"><div class="stat-value">0</div><div class="stat-label">No coverage data available</div></div>';
+    }
+    document.getElementById('coverageStats').innerHTML = statsHtml;
+
+    // Histogram
+    if (covValues.length > 0) {
+      Plotly.newPlot('coverageChart', [{
+        type: 'histogram',
+        x: covValues.map(function(v) { return v * 100; }),
+        marker: { color: '#3b82f6', line: { color: '#2563eb', width: 1 } },
+        xbins: { start: 0, end: 100, size: 10 },
+        hoverinfo: 'x+y'
+      }], plotlyLayout({
+        margin: { t: 10, b: 50, l: 50, r: 20 },
+        xaxis: { title: 'k-Coverage (%)', range: [0, 105] },
+        yaxis: { title: 'Number of Reviews' },
+        bargap: 0.05
+      }), PLOTLY_CONFIG);
+    } else {
+      document.getElementById('coverageChart').innerHTML = '<p style="text-align:center; color: var(--text-muted); padding: 40px;">No coverage data to display.</p>';
+    }
+  }
+
+  // -------------------- Test Hook (no-op in production) --------------------
+  // Exposes an injection function for Selenium tests so they can set `data`
+  // and trigger renderAll() without going through the file-input flow.
+  window.__loadDashboardData = function(payload) {
+    if (!Array.isArray(payload)) return;
+    data = payload;
+    document.getElementById('csvExport').disabled = false;
+    renderAll();
+  };
+
+})();
+</script>
+</body>
+</html>
