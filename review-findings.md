@@ -32,4 +32,26 @@
 - **P2-3** [Deferred]: DOI regex greediness — mitigated by expanded rstrip.
 - **P2-4** [Deferred]: Mock-ZIP tests for DOI/PMID loaders — low priority.
 
+---
+
+## Code Review Round 3 — 2026-04-03
+### Reviewer: Claude Opus 4.6 (1M context)
+### Files: `pipeline/` (8 modules), `dashboard/index.html` (1,373 lines)
+
+#### P0 -- Critical (1 found, FIXED)
+
+- **[FIXED] P0-1** [Security]: Dashboard CSV export `csvVal()` function missing formula injection protection. Fields like `outcome_label` and `primary_error_source` could contain strings starting with `=`, `+`, `@`, `\t`, `\r` interpreted as formulas in Excel. Fixed: prepend `'` for dangerous prefixes.
+
+#### P1 -- Important (0 new)
+
+- Pipeline SE calculation (`se_from_ci`) is correct.
+- Dashboard `escapeHtml` used correctly in HTML output.
+
+#### P2 -- Minor (0 new)
+
+- Dashboard has proper `</html>` closing tag.
+- Dark mode, ARIA tabs, keyboard support all present.
+
+---
+
 #### Previous Review (Round 1): ALL 6 P0 + 10 P1 FIXED

@@ -776,6 +776,8 @@ tbody td {
   function csvVal(v) {
     if (v == null) return '';
     var s = String(v);
+    // CSV formula injection: prepend tick for dangerous prefixes (NOT minus — corrupts negative medical values)
+    if (/^[=+@\t\r]/.test(s)) { s = "'" + s; }
     if (s.indexOf(',') >= 0 || s.indexOf('"') >= 0 || s.indexOf('\n') >= 0) {
       return '"' + s.replace(/"/g, '""') + '"';
     }
