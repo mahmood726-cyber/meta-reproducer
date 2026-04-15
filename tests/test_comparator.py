@@ -118,3 +118,61 @@ def test_review_level_returns_metadata():
     assert "ref_sig"     in result
     assert "repro_sig"   in result
     assert abs(result["k_coverage"] - 0.60) < 1e-9
+
+
+# ---------------------------------------------------------------------------
+# Regression: scalar .copy() spray (2026-04-15 triage-sweep)
+# ---------------------------------------------------------------------------
+
+def test_assess_review_level_handles_non_copyable_scalars():
+    """Regression for 2026-04-15 triage-sweep.
+
+    An earlier WIP sprayed `.copy()` onto dict values that are plain floats
+    (``ref["pooled"]``, ``repro["pooled"]``) in pipeline.comparator.
+    ``float.copy()`` raises ``AttributeError``, which halted the test suite
+    at the first assess_review_level call. Same root cause as FragilityAtlas
+    commit 94d1c327. This test asserts the function runs on plain-float inputs
+    without calling .copy() on them.
+    """
+    from pipeline.comparator import assess_review_level
+
+    # Plain python floats - must NOT be .copy()'d.
+    ref   = {"pooled": -0.5, "se": 0.1}
+    repro = {"pooled": -0.48, "se": 0.1}
+
+    # Pre-fix this raises AttributeError: 'float' object has no attribute 'copy'
+    result = assess_review_level(ref, repro, original_k=10, k_extracted=6)
+    assert isinstance(result, dict)
+    assert "classification" in result
+
+
+def test_pool_dl_k1_handles_scalar_sei():
+    """Regression: pipeline.meta_engine.pool_dl with k=1 accessed sei[0].copy().
+
+    When ``sei`` is a 1-D numpy array, ``sei[0]`` is a numpy scalar; the spray
+    added .copy() which fails for python-float inputs and is meaningless for
+    numpy scalars (they're immutable). Verify the k=1 branch runs cleanly.
+    """
+    import numpy as np
+    from pipeline.meta_engine import pool_dl
+
+    yi  = np.array([0.5])
+    sei = np.array([0.2])
+    result = pool_dl(yi, sei)
+    assert isinstance(result, dict)
+    assert "pooled" in result and "se" in result
+
+
+def test_pool_reml_does_not_copy_tau2_scalar():
+    """Regression: pipeline.meta_engine.pool_reml called dl_result['tau2'].copy().
+
+    ``tau2`` from ``pool_dl`` is a python float (not an array); .copy() raises.
+    """
+    import numpy as np
+    from pipeline.meta_engine import pool_reml
+
+    yi  = np.array([0.3, 0.5, 0.4, 0.45, 0.35])
+    sei = np.array([0.1, 0.12, 0.11, 0.09, 0.1])
+    result = pool_reml(yi, sei)
+    assert isinstance(result, dict)
+    assert "tau2" in result
