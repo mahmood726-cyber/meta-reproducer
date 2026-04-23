@@ -16,7 +16,7 @@ from pipeline.orchestrator import reproduce_outcome, select_primary_outcome
 sys.path.insert(0, str(Path(__file__).parent))
 from link_mega_data import build_study_pdf_map, build_study_pmid_map, build_study_doi_map, link_reviews
 
-RDA_DIR = Path(r"C:\Users\user\OneDrive - NHS\Documents\Pairwise70\data")
+RDA_DIR = Path(r"os.path.join(os.path.dirname(__file__), '..') - NHS\Documents\Pairwise70\data")
 RESULTS_DIR = Path(__file__).parent.parent / "data" / "results"
 
 

@@ -16,6 +16,11 @@ try:
 except ImportError:
     SELENIUM_AVAILABLE = False
 
+try:
+    from urllib3.exceptions import HTTPError as Urllib3HTTPError
+except ImportError:
+    Urllib3HTTPError = Exception
+
 pytestmark = pytest.mark.skipif(
     not SELENIUM_AVAILABLE, reason="selenium not installed"
 )
@@ -34,7 +39,9 @@ def _make_driver():
         d = webdriver.Chrome(options=opts)
         d.set_window_size(1400, 900)
         return d
-    except WebDriverException:
+    except (WebDriverException, TimeoutError, Urllib3HTTPError):
+        # Selenium may fail before creating a session when Chrome/ChromeDriver
+        # is missing or unresponsive; treat that as an unavailable browser.
         return None
 
 
@@ -199,6 +206,26 @@ def test_taxonomy_tab_renders(loaded_dashboard):
     assert content.is_displayed(), "taxonomyContent should be visible"
 
 
+def _panel_content_is_visible(driver, element_id):
+    """Use a lightweight DOM visibility check for heavy dashboard panels."""
+    return driver.execute_script(
+        """
+        const el = document.getElementById(arguments[0]);
+        if (!el) {
+            return null;
+        }
+        const style = window.getComputedStyle(el);
+        return {
+            display: style.display,
+            visibility: style.visibility,
+            hidden: el.hidden,
+            htmlLength: el.innerHTML.length,
+        };
+        """,
+        element_id,
+    )
+
+
 def test_fragility_tab_renders(loaded_dashboard):
     """Clicking the Fragility Landscape tab shows fragility content."""
     tab = loaded_dashboard.find_element(By.ID, "tab-fragility")
@@ -206,8 +233,12 @@ def test_fragility_tab_renders(loaded_dashboard):
     time.sleep(0.6)
     panel = loaded_dashboard.find_element(By.ID, "fragilityPanel")
     assert "active" in panel.get_attribute("class")
-    content = loaded_dashboard.find_element(By.ID, "fragilityContent")
-    assert content.is_displayed()
+    state = _panel_content_is_visible(loaded_dashboard, "fragilityContent")
+    assert state is not None
+    assert state["display"] != "none"
+    assert state["visibility"] != "hidden"
+    assert not state["hidden"]
+    assert state["htmlLength"] > 0
 
 
 def test_coverage_tab_renders(loaded_dashboard):
@@ -217,8 +248,12 @@ def test_coverage_tab_renders(loaded_dashboard):
     time.sleep(0.6)
     panel = loaded_dashboard.find_element(By.ID, "coveragePanel")
     assert "active" in panel.get_attribute("class")
-    content = loaded_dashboard.find_element(By.ID, "coverageContent")
-    assert content.is_displayed()
+    state = _panel_content_is_visible(loaded_dashboard, "coverageContent")
+    assert state is not None
+    assert state["display"] != "none"
+    assert state["visibility"] != "hidden"
+    assert not state["hidden"]
+    assert state["htmlLength"] > 0
 
 
 def test_no_inject_error(loaded_dashboard):

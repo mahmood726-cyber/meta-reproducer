@@ -95,7 +95,7 @@ def test_full_pipeline_real_rda():
     from pipeline.effect_inference import infer_outcome_types
     from pipeline.orchestrator import reproduce_outcome, select_primary_outcome
 
-    rda_dir = Path(r"C:\Users\user\OneDrive - NHS\Documents\Pairwise70\data")
+    rda_dir = Path(r"os.path.join(os.path.dirname(__file__), '..') - NHS\Documents\Pairwise70\data")
     rda_files = sorted(rda_dir.glob("*.rda"))
     if not rda_files:
         pytest.skip("Pairwise70 not available")
